@@ -251,7 +251,7 @@ export async function bulkUpdateAction(
 }
 
 // ───────────────────────── helpers ─────────────────────────
-type ExistingTask = Awaited<ReturnType<typeof prisma.task.findUnique<{ include: { vertical: true; subVertical: true; priority: true; ownerRole: true } }>>>;
+type ExistingTask = Awaited<ReturnType<typeof prisma.task.findUnique<{ where: { id: string }, include: { vertical: true; subVertical: true; priority: true; ownerRole: true } }>>>;
 type Patch = Record<string, unknown>;
 
 async function resolveLabels(patch: Patch, existing: ExistingTask) {

@@ -26,10 +26,12 @@ sudo dnf install -y docker git
 # 2. Start and enable Docker
 sudo systemctl enable --now docker
 
-# 3. Install Docker Compose
+# 3. Install Docker Compose and Buildx plugins
 sudo mkdir -p /usr/local/lib/docker/cli-plugins/
 sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m) -o /usr/local/lib/docker/cli-plugins/docker-compose
+sudo curl -SL https://github.com/docker/buildx/releases/download/v0.17.1/buildx-v0.17.1.linux-amd64 -o /usr/local/lib/docker/cli-plugins/docker-buildx
 sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
 
 # 4. (optional) let the ec2-user run docker without sudo
 sudo usermod -aG docker ec2-user
