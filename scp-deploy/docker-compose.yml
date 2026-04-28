@@ -1,0 +1,62 @@
+# Strategic Control Portal — production stack
+# Two containers on a private network:
+#   - db   : Postgres 16 (NO host port published; only the app can reach it)
+#   - app  : Next.js, bound ONLY to 127.0.0.1:3000 so host Nginx can reverse-proxy /scp/
+#
+# This stack is fully isolated from any other Postgres / app on the host.
+# It does NOT touch the host's PostgreSQL service, port 5432, or any host package.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: scp-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-scp}
+      POSTGRES_USER: ${POSTGRES_USER:-scp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    volumes:
+      - scp_pgdata:/var/lib/postgresql/data
+    networks:
+      - scp_net
+    # NOTE: deliberately NO `ports:` block — DB is only reachable from the app container.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-scp} -d ${POSTGRES_DB:-scp}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: scp-app:latest
+    container_name: scp-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # DB lives on the docker network as host "db" — never reachable from outside the compose network
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-scp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-scp}?schema=public"
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET must be set in .env}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-https://rathinamtechnicalcampus.com/scp}
+      BASE_PATH:   ${BASE_PATH:-/scp}
+      NODE_ENV:    production
+      PORT:        "3000"
+      SCP_SEED:    ${SCP_SEED:-0}
+    ports:
+      # Bound to loopback only — host Nginx is the public entry point.
+      - "127.0.0.1:3000:3000"
+    networks:
+      - scp_net
+
+volumes:
+  scp_pgdata:
+    name: scp_pgdata
+
+networks:
+  scp_net:
+    name: scp_net
+    driver: bridge
