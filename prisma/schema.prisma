@@ -1,0 +1,397 @@
+// Strategic Control Portal — Prisma schema
+// Postgres + Prisma. Run: npx prisma db push (or migrate dev) then npm run db:seed
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ────────────────────────────────────────────────────────────
+// Roles & Users
+// ────────────────────────────────────────────────────────────
+
+enum SystemRole {
+  SUPER_ADMIN
+  CBO
+  SM
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  passwordHash String
+  systemRole   SystemRole
+  ownerRoleId  String?   // optional link to OwnerRole (e.g., "Marketing Head")
+  ownerRole    OwnerRole? @relation(fields: [ownerRoleId], references: [id])
+  active       Boolean   @default(true)
+  lastSeenAt   DateTime? // updated each time user opens dashboard — powers "since last visit"
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  ownedTasks      Task[]          @relation("TaskOwner")
+  createdTasks    Task[]          @relation("TaskCreator")
+  taskUpdates     TaskUpdate[]
+  bossInstructions BossInstruction[] @relation("InstructionCapturedBy")
+  parkingItems    ParkingLot[]    @relation("ParkingCapturedBy")
+  interventions   Intervention[]  @relation("InterventionRaisedBy")
+  pins            Pin[]
+  auditLogs       AuditLog[]
+  availabilities  Availability[]
+  organizedAppointments Appointment[] @relation("AppointmentOrganizer")
+  attendingAppointments Appointment[] @relation("AppointmentAttendee")
+  notifications   Notification[]    @relation("NotificationRecipient")
+  sentNotifications Notification[]  @relation("NotificationSender")
+
+  @@index([systemRole])
+}
+
+// In-app notifications — used to surface SM activity to the CBO with toasts + sound.
+model Notification {
+  id          String   @id @default(cuid())
+  recipientId String
+  recipient   User     @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  senderId    String?
+  sender      User?    @relation("NotificationSender", fields: [senderId], references: [id])
+  kind        String   // e.g., task.created, task.updated, task.escalated, appointment.requested
+  title       String
+  body        String?
+  link        String?
+  refId       String?  // related entity id (taskId, interventionId, appointmentId)
+  seenAt      DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([recipientId, seenAt])
+  @@index([createdAt])
+}
+
+// ────────────────────────────────────────────────────────────
+// Availability — recurring weekly working hours per user
+// ────────────────────────────────────────────────────────────
+
+model Availability {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dayOfWeek Int      // 0=Sunday..6=Saturday
+  startMin  Int      // minutes from midnight (e.g., 540 = 9:00am)
+  endMin    Int      // e.g., 720 = 12:00pm
+  label     String?  // optional ("Decision slot", "Open hours")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([userId, dayOfWeek])
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+  CANCELLED
+  COMPLETED
+}
+
+enum AppointmentRecurrence {
+  NONE
+  WEEKLY
+  MONTHLY
+}
+
+// ────────────────────────────────────────────────────────────
+// Appointment — one-on-one (organizer ↔ attendee) meetings
+// ────────────────────────────────────────────────────────────
+
+model Appointment {
+  id              String   @id @default(cuid())
+  title           String
+  description     String?
+  agenda          String?
+  organizerId     String
+  organizer       User     @relation("AppointmentOrganizer", fields: [organizerId], references: [id])
+  attendeeId      String
+  attendee        User     @relation("AppointmentAttendee", fields: [attendeeId], references: [id])
+  startAt         DateTime
+  endAt           DateTime
+  location        String?
+  status          AppointmentStatus @default(PENDING)
+  recurrence      AppointmentRecurrence @default(NONE)
+  recurrenceUntil DateTime?
+  parentId        String?  // for instances generated from a recurring parent
+
+  // Links — closes the loop with the rest of the system
+  interventionId  String?
+  intervention    Intervention? @relation(fields: [interventionId], references: [id])
+  taskId          String?
+  task            Task?    @relation("AppointmentTask", fields: [taskId], references: [id])
+  verticalId      String?
+
+  // Outcome — recorded after the meeting
+  outcome         String?
+
+  rejectionReason String?
+  cancelledReason String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([attendeeId, startAt])
+  @@index([organizerId, startAt])
+  @@index([status])
+}
+
+// CBO can pin tasks/interventions/verticals to keep them visible across sessions.
+model Pin {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String   // "task" | "intervention" | "vertical"
+  refId     String   // id of the referenced entity
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@unique([userId, kind, refId])
+  @@index([userId])
+}
+
+// Light global audit log — written by Super Admin actions and high-impact ops.
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String   // e.g., "user.create", "vertical.delete", "intervention.resolve"
+  entity    String   // "User" | "Vertical" | etc.
+  entityId  String?
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([entity, entityId])
+}
+
+// OwnerRole = the operational role assigned to a task owner
+// (e.g., "Marketing Head", "RTC Head", "Placement Head"). Configurable by Super Admin.
+model OwnerRole {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String?
+  active      Boolean @default(true)
+  createdAt   DateTime @default(now())
+
+  users User[]
+  tasks Task[]
+}
+
+// ────────────────────────────────────────────────────────────
+// Verticals & Sub-Verticals (configurable by Super Admin)
+// ────────────────────────────────────────────────────────────
+
+model Vertical {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  code        String  @unique // e.g., MKT, RTC, PLC, AIC, RGU, SSP
+  description String?
+  colorHex    String  @default("#4f46e5")
+  sortOrder   Int     @default(0)
+  active      Boolean @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  subVerticals SubVertical[]
+  tasks        Task[]
+}
+
+model SubVertical {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  verticalId  String
+  vertical    Vertical @relation(fields: [verticalId], references: [id], onDelete: Cascade)
+  sortOrder   Int     @default(0)
+  active      Boolean @default(true)
+  createdAt   DateTime @default(now())
+
+  tasks Task[]
+
+  @@unique([verticalId, name])
+  @@index([verticalId])
+}
+
+// ────────────────────────────────────────────────────────────
+// Priority (configurable by Super Admin)
+// ────────────────────────────────────────────────────────────
+
+model Priority {
+  id            String  @id @default(cuid())
+  code          String  @unique // P1, P2, P3, P4 (or custom)
+  label         String
+  description   String?
+  reviewCadence String? // "Daily tracking", "Twice-a-week review", etc.
+  colorHex      String  @default("#6b7280")
+  rank          Int     // ordering: lower number = higher priority
+  active        Boolean @default(true)
+
+  tasks Task[]
+}
+
+// ────────────────────────────────────────────────────────────
+// Status (fixed set, but stored for flexibility)
+// ────────────────────────────────────────────────────────────
+
+enum TaskStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  WAITING_FOR_INPUT
+  WAITING_FOR_APPROVAL
+  DELAYED
+  COMPLETED
+  PARKED
+  DROPPED
+}
+
+enum TaskSource {
+  BOSS_INSTRUCTION
+  WHATSAPP_GROUP
+  MANAGEMENT_MEETING
+  DEPARTMENT_MEETING
+  MARKETING_REVIEW
+  MRM
+  PLACEMENT_REVIEW
+  RTC_REVIEW
+  DIGITAL_REVIEW
+  SELF_STRATEGY
+  NEW_IDEA
+}
+
+enum InterventionFlag {
+  NO
+  YES
+  ONLY_IF_DELAYED
+}
+
+// ────────────────────────────────────────────────────────────
+// Tasks (the heart of the register)
+// ────────────────────────────────────────────────────────────
+
+model Task {
+  id              String   @id @default(cuid())
+  code            String   @unique // auto-generated like MKT-001
+  title           String
+  description     String?
+  verticalId      String
+  vertical        Vertical @relation(fields: [verticalId], references: [id])
+  subVerticalId   String?
+  subVertical     SubVertical? @relation(fields: [subVerticalId], references: [id])
+  priorityId      String
+  priority        Priority @relation(fields: [priorityId], references: [id])
+  status          TaskStatus @default(NOT_STARTED)
+  source          TaskSource @default(SELF_STRATEGY)
+  ownerUserId     String?
+  ownerUser       User?    @relation("TaskOwner", fields: [ownerUserId], references: [id])
+  ownerRoleId     String?
+  ownerRole       OwnerRole? @relation(fields: [ownerRoleId], references: [id])
+  createdById     String
+  createdBy       User     @relation("TaskCreator", fields: [createdById], references: [id])
+  deadline        DateTime?
+  frequency       String?  // "Daily", "Weekly", "Monthly", "Need-based"
+  supportNeeded   String?
+  delayReason     String?
+  nextAction      String?
+  intervention    InterventionFlag @default(NO)
+  expectedOutput  String?
+  lastUpdateAt    DateTime?
+  droppedAt       DateTime?  // soft-delete timestamp; restore window = 30 days
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  updates       TaskUpdate[]
+  interventions Intervention[]
+  appointments  Appointment[] @relation("AppointmentTask")
+
+  @@index([verticalId, status])
+  @@index([priorityId])
+  @@index([ownerUserId])
+  @@index([droppedAt])
+}
+
+model TaskUpdate {
+  id        String  @id @default(cuid())
+  taskId    String
+  task      Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User    @relation(fields: [authorId], references: [id])
+  note      String
+  newStatus TaskStatus?
+  createdAt DateTime @default(now())
+
+  @@index([taskId])
+}
+
+// ────────────────────────────────────────────────────────────
+// Boss Task Register
+// ────────────────────────────────────────────────────────────
+
+model BossInstruction {
+  id              String   @id @default(cuid())
+  receivedAt      DateTime @default(now())
+  instruction     String
+  source          TaskSource
+  verticalId      String?
+  capturedById    String
+  capturedBy      User     @relation("InstructionCapturedBy", fields: [capturedById], references: [id])
+  status          String   @default("Captured") // Captured / Activated / Parked / Closed
+  responseGiven   String?
+  linkedTaskId    String?
+  createdAt       DateTime @default(now())
+}
+
+// ────────────────────────────────────────────────────────────
+// Dr. BN Intervention Register
+// ────────────────────────────────────────────────────────────
+
+model Intervention {
+  id              String   @id @default(cuid())
+  taskId          String?
+  task            Task?    @relation(fields: [taskId], references: [id])
+  verticalId      String?
+  issue           String
+  whyNeeded       String
+  decisionRequired String
+  deadline        DateTime?
+  noteAttached    Boolean  @default(false)
+  resolved        Boolean  @default(false)
+  resolutionNote  String?
+  decisionType    String?  // "approve" | "defer" | "need_info" | custom
+  snoozedUntil    DateTime? // CBO can snooze; reappears in queue at/after this time
+  cboNote         String?   // private note CBO can drop for SM without escalating publicly
+  raisedById      String
+  raisedBy        User     @relation("InterventionRaisedBy", fields: [raisedById], references: [id])
+  appointments    Appointment[]
+  createdAt       DateTime @default(now())
+  resolvedAt      DateTime?
+
+  @@index([resolved])
+  @@index([snoozedUntil])
+}
+
+// ────────────────────────────────────────────────────────────
+// Parking Lot
+// ────────────────────────────────────────────────────────────
+
+model ParkingLot {
+  id              String   @id @default(cuid())
+  idea            String
+  suggestedBy     String
+  verticalId      String?
+  expectedImpact  String?  // High / Medium / Low
+  urgency         String?  // High / Medium / Low
+  decision        String   @default("Park") // Park / Activate / Review
+  reviewDate      DateTime?
+  remarks         String?
+  capturedById    String
+  capturedBy      User     @relation("ParkingCapturedBy", fields: [capturedById], references: [id])
+  createdAt       DateTime @default(now())
+}
