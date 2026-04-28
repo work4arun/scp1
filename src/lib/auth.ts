@@ -13,12 +13,7 @@ declare module "next-auth" {
   }
 }
 
-declare module "next-auth/jwt" {
-  interface JWT {
-    id: string;
-    systemRole: SystemRole;
-  }
-}
+// Removed next-auth/jwt module augmentation as it causes build errors in v5.
 
 // Fail loudly at startup if AUTH_SECRET is missing — much friendlier than the
 // generic "Server configuration" message at login time.
@@ -71,16 +66,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   ],
   callbacks: {
     async jwt({ token, user }) {
+      const t = token as any;
       if (user) {
-        token.id = (user as { id: string }).id;
-        token.systemRole = (user as { systemRole: SystemRole }).systemRole;
+        t.id = (user as { id: string }).id;
+        t.systemRole = (user as { systemRole: SystemRole }).systemRole;
       }
-      return token;
+      return t;
     },
     async session({ session, token }) {
+      const t = token as any;
       if (session.user) {
-        session.user.id = token.id;
-        session.user.systemRole = token.systemRole;
+        session.user.id = t.id;
+        session.user.systemRole = t.systemRole;
       }
       return session;
     },
