@@ -1,13 +1,13 @@
-# Strategic Control Portal — Docker Deployment on AlmaLinux 9
+# Strategic Control Portal — Docker Deployment on Amazon Linux 2023 (AWS)
 
-Target URL: `https://rathinamtechnicalcampus.com/scp`
+Target URL: `http://<YOUR_AWS_PUBLIC_IP>`
 
 ## Why this design
 
 The server is shared with other apps that already use PostgreSQL. To guarantee that **this app cannot affect, and cannot be affected by, any other Postgres on this server — now or in the future** — everything for SCP runs inside Docker:
 
 - A dedicated **Postgres 16 container** with its own data volume. It does **not** publish any host port. The host's existing Postgres on `5432` is untouched.
-- A dedicated **Next.js container** bound only to `127.0.0.1:3000`. The public traffic enters via the host's existing Nginx, which reverse-proxies `/scp/` to the container.
+- A dedicated **Next.js container** bound directly to port `80`. The public traffic hits Docker directly over HTTP.
 - A dedicated **Docker network** (`scp_net`). The two containers talk to each other on this private network — nothing else on the host can reach the database.
 
 To remove the entire app cleanly later: `docker compose down -v` (and delete the folder). Nothing else on the server is touched.
@@ -19,22 +19,29 @@ To remove the entire app cleanly later: `docker compose down -v` (and delete the
 > Skip any step whose tool you already have.
 
 ```bash
-# 1. Install Docker Engine + the compose plugin on AlmaLinux 9
-sudo dnf -y install dnf-plugins-core
-sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-sudo dnf -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+# 1. Install Docker Engine and Git on Amazon Linux 2023
+sudo dnf update -y
+sudo dnf install -y docker git
 
+# 2. Start and enable Docker
 sudo systemctl enable --now docker
 
-# 2. (optional) let your user run docker without sudo
-sudo usermod -aG docker "$USER"
-newgrp docker     # or log out/in
+# 3. Install Docker Compose
+sudo mkdir -p /usr/local/lib/docker/cli-plugins/
+sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m) -o /usr/local/lib/docker/cli-plugins/docker-compose
+sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
-# 3. Open the firewall ONLY for 80/443 if not already open. Do NOT open 3000 or 5432.
-sudo firewall-cmd --permanent --add-service=http
-sudo firewall-cmd --permanent --add-service=https
-sudo firewall-cmd --reload
+# 4. (optional) let the ec2-user run docker without sudo
+sudo usermod -aG docker ec2-user
+newgrp docker     # or log out/in
 ```
+
+> **3. AWS Security Groups (Firewall):**
+> Instead of running local firewall commands, go to your **AWS EC2 Console**.
+> Select your instance -> Security -> click the Security Group.
+> Edit Inbound Rules and add two rules:
+> - **Type:** HTTP, **Port:** 80, **Source:** 0.0.0.0/0
+> - **Type:** HTTPS, **Port:** 443, **Source:** 0.0.0.0/0
 
 ---
 
@@ -44,7 +51,7 @@ Pick a stable directory. Suggested:
 
 ```
 /opt/scp/
-├── app/                  <-- the source code from https://github.com/work4arun/scp
+├── app/                  <-- the source code from https://github.com/work4arun/scp1
 └── deploy/               <-- the files from this scp-deploy folder
     ├── Dockerfile
     ├── docker-compose.yml
@@ -52,8 +59,6 @@ Pick a stable directory. Suggested:
     ├── .dockerignore
     ├── docker/
     │   └── entrypoint.sh
-    └── nginx/
-        └── scp.conf
 ```
 
 The Dockerfile expects to be run from a directory that *also contains the app source* (so the `COPY . .` step picks it up). Easiest pattern: put the deploy files **inside the app folder**, like this:
@@ -71,7 +76,7 @@ The Dockerfile expects to be run from a directory that *also contains the app so
 └── docker/entrypoint.sh  <-- copied from scp-deploy/
 ```
 
-> ⚠️ **Heads-up about the GitHub repo.** As of today, `https://github.com/work4arun/scp.git` contains only `README.md` — the actual `strategic-control-portal/` source code has not been pushed yet. Push the source first, otherwise the Docker build has nothing to compile.
+> ⚠️ **Heads-up about the GitHub repo.** As of today, `https://github.com/work4arun/scp1.git` contains only `README.md` — the actual `strategic-control-portal/` source code has not been pushed yet. Push the source first, otherwise the Docker build has nothing to compile.
 
 ---
 
@@ -81,21 +86,20 @@ The Dockerfile expects to be run from a directory that *also contains the app so
 # 1. Get the code
 sudo mkdir -p /opt/scp && sudo chown "$USER":"$USER" /opt/scp
 cd /opt/scp
-git clone https://github.com/work4arun/scp.git app
+git clone https://github.com/work4arun/scp1.git app
 cd app
 
 # 2. Drop the deploy files in alongside the source
 #    (copy from this scp-deploy folder; e.g. via scp / rsync from your laptop, or curl from a release)
 #    After this step you should see Dockerfile, docker-compose.yml, .dockerignore,
-#    docker/entrypoint.sh, nginx/scp.conf inside /opt/scp/app/
+#    docker/entrypoint.sh inside /opt/scp/app/
 
 # 3. Create .env
 cp .env.example .env
 # Edit it:
 #   - POSTGRES_PASSWORD : openssl rand -base64 24
 #   - AUTH_SECRET       : openssl rand -base64 32
-#   - NEXTAUTH_URL      : https://rathinamtechnicalcampus.com/scp   (already the default)
-#   - BASE_PATH         : /scp                                      (already the default)
+#   - NEXTAUTH_URL      : http://<YOUR_AWS_PUBLIC_IP>
 #   - SCP_SEED          : 1   <-- ONLY for the very first boot, then change back to 0
 
 nano .env
@@ -113,22 +117,9 @@ sed -i 's/^SCP_SEED=1/SCP_SEED=0/' .env
 docker compose up -d   # picks up the env change with no rebuild
 ```
 
-At this point the app is listening on `127.0.0.1:3000` inside the host. It is **not** reachable from the internet yet — Nginx still has to be told about `/scp/`.
+At this point the app is listening directly on port 80.
 
----
-
-## Wire up Nginx (host side)
-
-You already have Nginx serving `rathinamtechnicalcampus.com` with TLS. Open whichever file currently holds that `server { ... listen 443 ssl ... }` block (commonly `/etc/nginx/conf.d/rathinamtechnicalcampus.com.conf` or `/etc/nginx/sites-available/...`) and **paste the contents of `nginx/scp.conf` inside** that server block.
-
-Then:
-
-```bash
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-Visit `https://rathinamtechnicalcampus.com/scp` — you should land on the SCP login page.
+Visit `http://<YOUR_AWS_PUBLIC_IP>` — you should land on the SCP login page.
 
 ---
 
@@ -185,7 +176,6 @@ cd /opt/scp/app
 docker compose down -v   # -v also drops the scp_pgdata volume
 docker image rm scp-app:latest postgres:16-alpine || true
 sudo rm -rf /opt/scp
-# Then remove the /scp/ block from Nginx and reload.
 ```
 
 This sequence touches **only** scp-owned resources. Nothing else on the shared server is affected.
@@ -209,11 +199,6 @@ Everything for SCP lives in the two containers and the named volume `scp_pgdata`
 
 **"AUTH_SECRET must be set"** — `.env` is missing or hasn't been edited. Copy `.env.example` to `.env` and fill in real values.
 
-**Login page loads but the CSS / images 404** — `BASE_PATH` and `NEXTAUTH_URL` got out of sync. They must agree: `BASE_PATH=/scp` and `NEXTAUTH_URL=https://rathinamtechnicalcampus.com/scp`. Fix `.env`, then `docker compose up -d`.
+**App doesn't load at all** — Ensure your AWS Security Group allows inbound traffic on Port 80 (HTTP).
 
-**`502 Bad Gateway` from Nginx** — The app container isn't running or isn't on `127.0.0.1:3000`. Check `docker compose ps` and `docker compose logs app`.
-
-**SELinux blocks Nginx → 127.0.0.1:3000** — On AlmaLinux this can happen if SELinux is enforcing and Nginx isn't allowed outbound to local network ports. Run once:
-```bash
-sudo setsebool -P httpd_can_network_connect 1
-```
+**Login page loads but the CSS / images 404** — `NEXTAUTH_URL` is likely incorrect. Make sure it explicitly says `http://<YOUR_AWS_PUBLIC_IP>`. Fix `.env`, then run `docker compose up -d`.

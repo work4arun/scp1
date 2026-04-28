@@ -1,7 +1,7 @@
 # Strategic Control Portal — production stack
 # Two containers on a private network:
 #   - db   : Postgres 16 (NO host port published; only the app can reach it)
-#   - app  : Next.js, bound ONLY to 127.0.0.1:3000 so host Nginx can reverse-proxy /scp/
+#   - app  : Next.js, bound directly to port 80 on the host to serve via IP
 #
 # This stack is fully isolated from any other Postgres / app on the host.
 # It does NOT touch the host's PostgreSQL service, port 5432, or any host package.
@@ -41,14 +41,14 @@ services:
       # DB lives on the docker network as host "db" — never reachable from outside the compose network
       DATABASE_URL: "postgresql://${POSTGRES_USER:-scp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-scp}?schema=public"
       AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET must be set in .env}
-      NEXTAUTH_URL: ${NEXTAUTH_URL:-https://rathinamtechnicalcampus.com/scp}
-      BASE_PATH:   ${BASE_PATH:-/scp}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost}
+      # BASE_PATH removed for root IP deployment
       NODE_ENV:    production
       PORT:        "3000"
       SCP_SEED:    ${SCP_SEED:-0}
     ports:
-      # Bound to loopback only — host Nginx is the public entry point.
-      - "127.0.0.1:3000:3000"
+      # Bound directly to host port 80 for public access.
+      - "80:3000"
     networks:
       - scp_net
 
