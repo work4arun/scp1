@@ -9,7 +9,7 @@ set -e
 
 echo "[scp] Waiting for database..."
 i=0
-until npx --no-install prisma db execute --stdin <<<'SELECT 1' >/dev/null 2>&1; do
+until echo 'SELECT 1' | npx --no-install prisma db execute --stdin >/dev/null 2>&1; do
   i=$((i+1))
   if [ "$i" -gt 30 ]; then
     echo "[scp] Database did not become reachable in time, continuing anyway." >&2
