@@ -24,7 +24,17 @@ type Row = {
   updatedAt: string;
 };
 
-export function BulkTaskList({ tasks, ownerRoles }: { tasks: Row[]; ownerRoles: { id: string; name: string }[] }) {
+export function BulkTaskList({
+  tasks,
+  ownerRoles,
+  bulkActionsEnabled = false,
+  dropReasonEnabled = false,
+}: {
+  tasks: Row[];
+  ownerRoles: { id: string; name: string }[];
+  bulkActionsEnabled?: boolean;
+  dropReasonEnabled?: boolean;
+}) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pending, startTransition] = useTransition();
   const [bulkStatus, setBulkStatus] = useState<string>("");
@@ -64,10 +74,24 @@ export function BulkTaskList({ tasks, ownerRoles }: { tasks: Row[]; ownerRoles: 
   }
   async function applyDrop() {
     if (selected.size === 0) return;
-    if (!confirm(`Drop ${selected.size} task(s)? They can be restored within 30 days.`)) return;
+    let reason = "";
+    if (dropReasonEnabled) {
+      const entered = window.prompt(
+        `Drop ${selected.size} task(s)? Please describe why — this will be recorded for the audit trail.`,
+        "",
+      );
+      if (entered === null) return; // cancelled
+      reason = entered.trim();
+      if (!reason) {
+        alert("A reason is required to drop tasks.");
+        return;
+      }
+    } else if (!confirm(`Drop ${selected.size} task(s)? They can be restored within 30 days.`)) {
+      return;
+    }
     startTransition(async () => {
       try {
-        await bulkUpdateAction(Array.from(selected), { action: "drop" });
+        await bulkUpdateAction(Array.from(selected), { action: "drop", reason });
         setSelected(new Set());
         router.refresh();
       } catch (e) {
@@ -78,18 +102,20 @@ export function BulkTaskList({ tasks, ownerRoles }: { tasks: Row[]; ownerRoles: 
 
   return (
     <>
-      {/* Select-all bar */}
-      <div className="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2">
-        <button onClick={toggleAll} className="inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground hover:text-foreground">
-          {allSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
-          {allSelected ? "Unselect all" : `Select all (${tasks.length})`}
-        </button>
-        {selected.size > 0 ? (
-          <span className="text-xs font-medium text-primary">{selected.size} selected</span>
-        ) : (
-          <span className="text-xs text-muted-foreground">Tap a card to select for bulk actions</span>
-        )}
-      </div>
+      {/* Select-all bar — only when bulk actions are enabled */}
+      {bulkActionsEnabled && (
+        <div className="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2">
+          <button onClick={toggleAll} className="inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground hover:text-foreground">
+            {allSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+            {allSelected ? "Unselect all" : `Select all (${tasks.length})`}
+          </button>
+          {selected.size > 0 ? (
+            <span className="text-xs font-medium text-primary">{selected.size} selected</span>
+          ) : (
+            <span className="text-xs text-muted-foreground">Tap a card to select for bulk actions</span>
+          )}
+        </div>
+      )}
 
       <div className="space-y-2 mt-3">
         {tasks.length === 0 ? (
@@ -98,16 +124,18 @@ export function BulkTaskList({ tasks, ownerRoles }: { tasks: Row[]; ownerRoles: 
           tasks.map((t) => {
             const checked = selected.has(t.id);
             return (
-              <Card key={t.id} className={checked ? "border-primary/60 ring-2 ring-primary/20" : "hover:border-primary/40 transition-colors"}>
+              <Card key={t.id} className={bulkActionsEnabled && checked ? "border-primary/60 ring-2 ring-primary/20" : "hover:border-primary/40 transition-colors"}>
                 <CardContent className="p-3 sm:p-4">
                   <div className="flex items-start gap-3">
-                    <button
-                      onClick={() => toggle(t.id)}
-                      className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md border border-border hover:bg-accent"
-                      aria-label={checked ? "Unselect" : "Select"}
-                    >
-                      {checked ? <CheckSquare className="h-4 w-4 text-primary" /> : <Square className="h-4 w-4 text-muted-foreground" />}
-                    </button>
+                    {bulkActionsEnabled && (
+                      <button
+                        onClick={() => toggle(t.id)}
+                        className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md border border-border hover:bg-accent"
+                        aria-label={checked ? "Unselect" : "Select"}
+                      >
+                        {checked ? <CheckSquare className="h-4 w-4 text-primary" /> : <Square className="h-4 w-4 text-muted-foreground" />}
+                      </button>
+                    )}
                     <Link href={`/sm/tasks/${t.id}`} className="flex-1 min-w-0">
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
@@ -142,7 +170,7 @@ export function BulkTaskList({ tasks, ownerRoles }: { tasks: Row[]; ownerRoles: 
       </div>
 
       {/* Sticky bulk action bar */}
-      {selected.size > 0 && (
+      {bulkActionsEnabled && selected.size > 0 && (
         <div className="fixed bottom-16 left-0 right-0 z-40 px-3 lg:bottom-6 lg:left-[260px]">
           <div className="mx-auto max-w-3xl rounded-2xl border border-border bg-card shadow-2xl p-3 backdrop-blur">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

@@ -102,6 +102,53 @@
     width: 60%;
     pointer-events: none;
   }
+
+  /* Card hover lift — subtle shadow + 1px translate.
+     Use alongside transition-all duration-200 (already on Card). */
+  .hover-lift {
+    transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+                box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1),
+                border-color 220ms;
+  }
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px -12px hsl(var(--primary) / 0.25);
+  }
+
+  /* Reveal — slightly larger displacement than fade-in, used for hero items.
+     Combine with `style={{ animationDelay: 'Xms' }}` to cascade. */
+  .reveal {
+    opacity: 0;
+    transform: translateY(10px);
+    animation: reveal-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+  @keyframes reveal-in {
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Animated horizontal bar that fills from 0 → its target width.
+     Set the width inline; the keyframe takes the element from scaleX(0) to scaleX(1). */
+  .grow-x {
+    transform-origin: left center;
+    animation: grow-x-in 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+  @keyframes grow-x-in {
+    from { transform: scaleX(0); }
+    to   { transform: scaleX(1); }
+  }
+
+  /* Number that pops on mount (used by CountUp's wrapper). */
+  .pop-in {
+    animation: pop-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+  @keyframes pop-in {
+    0%   { transform: scale(0.86); opacity: 0; }
+    60%  { transform: scale(1.04); opacity: 1; }
+    100% { transform: scale(1); }
+  }
 }
 
 /* Respect users who prefer reduced motion — disable all looping animations. */

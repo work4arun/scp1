@@ -13,6 +13,7 @@ export async function addUpdateAction(taskId: string, formData: FormData) {
 
   const note = String(formData.get("note") || "").trim();
   const newStatus = formData.get("status") as TaskStatus | "";
+  const delayReason = (formData.get("delayReason") as string || "").trim() || null;
   if (!note) return;
 
   await prisma.taskUpdate.create({
@@ -29,6 +30,8 @@ export async function addUpdateAction(taskId: string, formData: FormData) {
     data: {
       lastUpdateAt: new Date(),
       ...(newStatus ? { status: newStatus } : {}),
+      // Persist delay reason when provided; clear it when status moves away from DELAYED
+      ...(delayReason !== null ? { delayReason } : newStatus && newStatus !== "DELAYED" ? { delayReason: null } : {}),
     },
   });
 
@@ -64,11 +67,12 @@ export async function escalateTaskAction(taskId: string, formData: FormData) {
   if (!issue || !whyNeeded || !decisionRequired) return;
 
   const task = await prisma.task.findUnique({ where: { id: taskId }, select: { verticalId: true } });
+  if (!task) throw new Error("Task not found");
 
   await prisma.intervention.create({
     data: {
       taskId,
-      verticalId: task?.verticalId,
+      verticalId: task.verticalId,
       issue,
       whyNeeded,
       decisionRequired,

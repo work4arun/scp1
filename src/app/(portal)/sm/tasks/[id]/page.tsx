@@ -23,6 +23,7 @@ export default async function TaskDetail({ params }: { params: { id: string } })
       priority: true,
       ownerRole: true,
       ownerUser: true,
+      subOwner: true,
       updates: { orderBy: { createdAt: "desc" }, include: { author: true } },
       interventions: { orderBy: { createdAt: "desc" } },
     },
@@ -77,7 +78,14 @@ export default async function TaskDetail({ params }: { params: { id: string } })
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <Detail label="Owner role" value={task.ownerRole?.name || "—"} />
-              <Detail label="Owner user" value={task.ownerUser?.name || "—"} />
+              <Detail
+                label="Owner"
+                value={task.ownerUser ? `${task.ownerUser.name} (${task.ownerUser.email})` : "—"}
+              />
+              <Detail
+                label="Sub-owner"
+                value={task.subOwner ? `${task.subOwner.name} (${task.subOwner.email})` : "—"}
+              />
               <Detail label="Deadline" value={task.deadline ? formatDate(task.deadline) : "—"} />
               <Detail label="Frequency" value={task.frequency || "—"} />
               <Detail label="Source" value={task.source.replace(/_/g, " ")} />

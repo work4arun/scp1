@@ -12,12 +12,15 @@ export default async function RolesAdmin() {
 
   const roles = await prisma.ownerRole.findMany({
     orderBy: { name: "asc" },
-    include: { _count: { select: { tasks: true, users: true } } },
+    include: { _count: { select: { tasks: true } } },
   });
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <PageHeader title="Owner Roles" description="The operational roles assigned as task owners (Marketing Head, RTC Head, …)." />
+      <PageHeader
+        title="Owner Roles"
+        description="Operational roles assigned as task owners (Marketing Head, RTC Head, …). The owner contact is just a name + email for communication — it does not create a login. Logins are managed on Users."
+      />
 
       <Card>
         <CardHeader><CardTitle>Add new role</CardTitle></CardHeader>
@@ -31,8 +34,13 @@ export default async function RolesAdmin() {
             <OwnerRoleRow
               key={r.id}
               r={{
-                id: r.id, name: r.name, description: r.description,
-                active: r.active, taskCount: r._count.tasks, userCount: r._count.users,
+                id: r.id,
+                name: r.name,
+                description: r.description,
+                active: r.active,
+                taskCount: r._count.tasks,
+                ownerName: r.ownerName,
+                ownerEmail: r.ownerEmail,
               }}
             />
           ))}

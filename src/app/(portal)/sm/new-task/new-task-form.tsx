@@ -7,11 +7,12 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { AlertTriangle } from "lucide-react";
 import { createTaskAction } from "./actions";
 
-type Vertical = { id: string; code: string; name: string };
+type Vertical  = { id: string; code: string; name: string };
 type SubVertical = { id: string; name: string; verticalId: string };
-type Priority = { id: string; code: string; label: string };
+type Priority  = { id: string; code: string; label: string };
 type OwnerRole = { id: string; name: string };
 
 export function NewTaskForm({
@@ -28,6 +29,8 @@ export function NewTaskForm({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [verticalId, setVerticalId] = useState(verticals[0]?.id || "");
+  const [error, setError] = useState<string | null>(null);
+
   const filteredSubs = useMemo(
     () => subVerticals.filter((s) => s.verticalId === verticalId),
     [subVerticals, verticalId]
@@ -35,15 +38,32 @@ export function NewTaskForm({
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    setError(null);
     const form = new FormData(e.currentTarget);
     startTransition(async () => {
-      const id = await createTaskAction(form);
-      if (id) router.push(`/sm/tasks/${id}`);
+      try {
+        const result = await createTaskAction(form);
+        if (!result.success) {
+          setError(result.error);
+          return;
+        }
+        router.push(`/sm/tasks/${result.id}`);
+      } catch {
+        setError("An unexpected error occurred. Please try again.");
+      }
     });
   }
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
+      {/* Inline error banner */}
+      {error && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Vertical" htmlFor="verticalId">
           <Select id="verticalId" name="verticalId" required value={verticalId} onChange={(e) => setVerticalId(e.target.value)}>
@@ -73,6 +93,25 @@ export function NewTaskForm({
             <option value="">— Unassigned —</option>
             {ownerRoles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </Select>
+        </Field>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field label="Owner email" htmlFor="ownerEmail">
+          <Input
+            id="ownerEmail"
+            name="ownerEmail"
+            type="email"
+            placeholder="owner@example.com — must be a registered user"
+          />
+        </Field>
+        <Field label="Sub-owner email" htmlFor="subOwnerEmail">
+          <Input
+            id="subOwnerEmail"
+            name="subOwnerEmail"
+            type="email"
+            placeholder="sub-owner@example.com — optional follow-up contact"
+          />
         </Field>
       </div>
 
@@ -129,7 +168,7 @@ export function NewTaskForm({
       </Field>
 
       <div className="flex justify-end gap-2 pt-2">
-        <Button type="reset" variant="outline">Reset</Button>
+        <Button type="reset" variant="outline" onClick={() => setError(null)}>Reset</Button>
         <Button type="submit" disabled={pending}>{pending ? "Saving…" : "Add to register"}</Button>
       </div>
     </form>

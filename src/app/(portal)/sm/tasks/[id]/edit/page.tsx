@@ -14,7 +14,7 @@ export default async function EditTaskPage({ params }: { params: { id: string } 
   if (!canManageTasks(session?.user.systemRole)) redirect("/");
 
   const [task, verticals, subVerticals, priorities, ownerRoles] = await Promise.all([
-    prisma.task.findUnique({ where: { id: params.id } }),
+    prisma.task.findUnique({ where: { id: params.id }, include: { ownerUser: true, subOwner: true, priority: true } }),
     prisma.vertical.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
     prisma.subVertical.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
     prisma.priority.findMany({ where: { active: true }, orderBy: { rank: "asc" } }),
@@ -48,7 +48,10 @@ export default async function EditTaskPage({ params }: { params: { id: string } 
               subVerticalId: task.subVerticalId,
               priorityId: task.priorityId,
               ownerRoleId: task.ownerRoleId,
+              ownerUserEmail: task.ownerUser?.email ?? null,
+              subOwnerEmail: task.subOwner?.email ?? null,
               deadline: task.deadline ? task.deadline.toISOString().slice(0, 10) : "",
+              delayReason: task.delayReason,
               frequency: task.frequency,
               source: task.source,
               expectedOutput: task.expectedOutput,

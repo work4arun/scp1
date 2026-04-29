@@ -31,8 +31,9 @@ export async function notifyAllCBO(args: NotifyArgs) {
         refId: args.refId ?? null,
       })),
     });
-  } catch {
-    // Notification table may not be migrated yet — silently skip.
+  } catch (err) {
+    // Notifications are best-effort — never break the primary action.
+    console.error("[notify] notifyAllCBO failed:", err);
   }
 }
 
@@ -49,5 +50,7 @@ export async function notifyUser(recipientId: string, args: NotifyArgs) {
         refId: args.refId ?? null,
       },
     });
-  } catch { /* swallow */ }
+  } catch (err) {
+    console.error("[notify] notifyUser failed:", err);
+  }
 }

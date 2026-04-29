@@ -6,7 +6,8 @@ import { canConfigureSystem } from "@/lib/rbac";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatRelative } from "@/lib/utils";
-import { Layers, Tags, Users, ListChecks, Building2, ShieldCheck, Activity, History } from "lucide-react";
+import { Layers, Tags, Users, ListChecks, Building2, ShieldCheck, Activity, History, ToggleLeft, Database } from "lucide-react";
+import { FLAG_REGISTRY } from "@/lib/features";
 
 export default async function AdminHome() {
   const session = await auth();
@@ -22,6 +23,12 @@ export default async function AdminHome() {
     prisma.task.count({ where: { status: "DROPPED" } }),
     prisma.intervention.count({ where: { resolved: false } }),
   ]);
+
+  // Feature flag count — degrade gracefully if migration hasn't run.
+  let enabledFlagCount = 0;
+  try {
+    enabledFlagCount = await prisma.featureFlag.count({ where: { enabled: true } });
+  } catch { /* table not yet migrated */ }
 
   // Audit log is a newer model — degrade gracefully if migration hasn't run yet.
   let recent: Array<{
@@ -42,6 +49,8 @@ export default async function AdminHome() {
     { href: "/admin/roles", icon: Users, title: "Owner Roles", value: ownerRoles, hint: "Marketing Head, RTC Head, …" },
     { href: "/admin/users", icon: Users, title: "Users", value: users, hint: "All user accounts" },
     { href: "/admin/tasks", icon: ListChecks, title: "All Tasks", value: tasks, hint: "Master register, all verticals" },
+    { href: "/admin/features", icon: ToggleLeft, title: "Feature Flags", value: `${enabledFlagCount} / ${FLAG_REGISTRY.length}`, hint: "Phase-1 enhancement toggles" },
+    { href: "/admin/backup", icon: Database, title: "Backup & Restore", value: "🛟", hint: "Download a .sql snapshot or restore from one" },
   ];
 
   return (

@@ -19,12 +19,16 @@ import {
   Sparkles,
   Building2,
   History,
+  ToggleLeft,
+  Database,
+  StickyNote,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SystemRole } from "@prisma/client";
 import { ROLE_LABELS } from "@/lib/rbac";
 import { SignOutButton } from "@/components/sign-out-button";
 import { NotificationBell } from "@/components/notification-bell";
+import { DarkModeToggle } from "@/components/dark-mode-toggle";
 
 type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }> };
 
@@ -39,17 +43,20 @@ function navItemsFor(role: SystemRole): NavItem[] {
       { href: "/admin/users", label: "Users", icon: Users },
       { href: "/admin/tasks", label: "All Tasks", icon: ListChecks },
       { href: "/admin/audit", label: "Audit Log", icon: History },
+      { href: "/admin/features", label: "Feature Flags", icon: ToggleLeft },
+      { href: "/admin/backup", label: "Backup & Restore", icon: Database },
     ];
   }
   if (role === "CBO") {
     return [
       { href: "/cbo", label: "Master Dashboard", icon: LayoutDashboard },
-      { href: "/cbo/daily", label: "Daily Summary", icon: Calendar },
+      { href: "/cbo/daily", label: "Today's Summary", icon: Calendar },
       { href: "/cbo/weekly", label: "Weekly Review", icon: Sparkles },
       { href: "/cbo/intervention", label: "My Decisions", icon: AlertTriangle },
       { href: "/calendar", label: "Calendar", icon: Calendar },
       { href: "/cbo/parking", label: "Parking Lot", icon: Archive },
       { href: "/cbo/verticals", label: "Verticals", icon: Building2 },
+      { href: "/cbo/notes", label: "Notes", icon: StickyNote },
     ];
   }
   // SM
@@ -59,6 +66,7 @@ function navItemsFor(role: SystemRole): NavItem[] {
     { href: "/sm/new-task", label: "New Task", icon: Inbox },
     { href: "/sm/boss", label: "Boss Register", icon: Inbox },
     { href: "/sm/intervention", label: "Escalations", icon: AlertTriangle },
+    { href: "/sm/notes", label: "Notes from CBO", icon: StickyNote },
     { href: "/calendar", label: "Calendar", icon: Calendar },
     { href: "/sm/parking", label: "Parking Lot", icon: Archive },
     { href: "/sm/dropped", label: "Dropped Archive", icon: Archive },
@@ -78,7 +86,7 @@ function bottomNavFor(role: SystemRole): NavItem[] {
   if (role === "CBO") {
     return [
       { href: "/cbo", label: "Home", icon: LayoutDashboard },
-      { href: "/cbo/daily", label: "Daily", icon: Calendar },
+      { href: "/cbo/daily", label: "Today", icon: Calendar },
       { href: "/cbo/intervention", label: "Decide", icon: AlertTriangle },
       { href: "/cbo/weekly", label: "Weekly", icon: Sparkles },
     ];
@@ -96,11 +104,13 @@ export function AppShell({
   role,
   userName,
   userEmail,
+  darkModeToggleEnabled = false,
 }: {
   children: React.ReactNode;
   role: SystemRole;
   userName: string;
   userEmail: string;
+  darkModeToggleEnabled?: boolean;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -125,6 +135,7 @@ export function AppShell({
           <span className="text-sm font-semibold">Strategic Control</span>
         </div>
         <div className="flex items-center gap-1">
+          {darkModeToggleEnabled && <DarkModeToggle />}
           <NotificationBell enabled={role === "CBO" || role === "SUPER_ADMIN"} />
           <SignOutButton variant="icon" />
         </div>
@@ -154,8 +165,13 @@ export function AppShell({
             </ul>
           </nav>
           <div className="border-t border-border p-4">
-            <div className="text-xs font-semibold leading-tight">{userName}</div>
-            <div className="truncate text-[11px] text-muted-foreground">{userEmail}</div>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-semibold leading-tight truncate">{userName}</div>
+                <div className="truncate text-[11px] text-muted-foreground">{userEmail}</div>
+              </div>
+              {darkModeToggleEnabled && <DarkModeToggle />}
+            </div>
             <SignOutButton />
           </div>
         </aside>

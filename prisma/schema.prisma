@@ -34,6 +34,7 @@ model User {
   updatedAt    DateTime  @updatedAt
 
   ownedTasks      Task[]          @relation("TaskOwner")
+  subOwnedTasks   Task[]          @relation("TaskSubOwner")
   createdTasks    Task[]          @relation("TaskCreator")
   taskUpdates     TaskUpdate[]
   bossInstructions BossInstruction[] @relation("InstructionCapturedBy")
@@ -46,6 +47,8 @@ model User {
   attendingAppointments Appointment[] @relation("AppointmentAttendee")
   notifications   Notification[]    @relation("NotificationRecipient")
   sentNotifications Notification[]  @relation("NotificationSender")
+  timers          Timer[]
+  authoredNotes   Note[]            @relation("NoteAuthor")
 
   @@index([systemRole])
 }
@@ -158,6 +161,8 @@ model Pin {
 }
 
 // Light global audit log — written by Super Admin actions and high-impact ops.
+// Audit Log v2 (gated by audit_log_v2 flag) additionally writes the before/after JSON
+// snapshot for any mutation routed through lib/audit.ts.
 model AuditLog {
   id        String   @id @default(cuid())
   userId    String?
@@ -166,22 +171,91 @@ model AuditLog {
   entity    String   // "User" | "Vertical" | etc.
   entityId  String?
   note      String?
+  before    Json?    // pre-mutation snapshot (audit_log_v2)
+  after     Json?    // post-mutation snapshot (audit_log_v2)
+  ip        String?
+  userAgent String?
   createdAt DateTime @default(now())
 
   @@index([createdAt])
   @@index([entity, entityId])
+  @@index([userId, createdAt])
+  @@index([action])
+}
+
+// Notes — composed by CBO from /cbo/notes and broadcast to every active SM.
+// Each note can carry text, an audio recording, or both. Audio is stored
+// inline as bytea so a single Postgres row holds the entire payload — keep
+// recordings short (≤ 60 s) for sane database growth.
+model Note {
+  id             String   @id @default(cuid())
+  authorId       String
+  author         User     @relation("NoteAuthor", fields: [authorId], references: [id])
+  // Audience is implicit: every active user holding this systemRole at delivery
+  // time. We snapshot the role on the row so historical filtering still works
+  // even if the audience definition changes.
+  audienceRole   SystemRole @default(SM)
+  text           String?
+  audioBytes     Bytes?
+  audioMime      String?  // e.g. "audio/webm;codecs=opus"
+  audioDurationS Int?
+  createdAt      DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([authorId, createdAt])
+}
+
+// Personal countdown timers (the "set a 25-min meeting timer" feature on the
+// CBO master dashboard). When fireAt arrives we send an email alarm to the
+// owner. `cancelledAt` and `sentAt` are mutually exclusive — both null means
+// the timer is still ticking.
+model Timer {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label       String?
+  fireAt      DateTime
+  sent        Boolean  @default(false)
+  sentAt      DateTime?
+  cancelledAt DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([userId, sent, cancelledAt])
+  @@index([fireAt])
+}
+
+// Feature Flags — controlled exclusively from the Super Admin UI at /admin/features.
+// Flags ship disabled-by-default; the seed script populates the registry on first boot.
+model FeatureFlag {
+  key         String   @id              // canonical key (e.g., "audit_log_v2")
+  enabled     Boolean  @default(false)
+  category    String   @default("general") // "core" | "workflow" | "ux" | "scale" | "security"
+  label       String                    // display label
+  description String                    // user-facing explanation
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+
+  @@index([category])
 }
 
 // OwnerRole = the operational role assigned to a task owner
 // (e.g., "Marketing Head", "RTC Head", "Placement Head"). Configurable by Super Admin.
+//
+// ownerName + ownerEmail are a simple contact record — NOT a login account.
+// They identify the person currently responsible for the role and serve as
+// the email recipient for task notifications. Logging into the app is a
+// separate concept handled by the User model + systemRole (SM / CBO /
+// SUPER_ADMIN).
 model OwnerRole {
   id          String  @id @default(cuid())
   name        String  @unique
   description String?
+  ownerName   String?  // contact name (no login implied)
+  ownerEmail  String?  // contact email for notifications
   active      Boolean @default(true)
   createdAt   DateTime @default(now())
 
-  users User[]
+  users User[]   // legacy: actual logged-in users that happen to hold this role
   tasks Task[]
 }
 
@@ -291,6 +365,8 @@ model Task {
   source          TaskSource @default(SELF_STRATEGY)
   ownerUserId     String?
   ownerUser       User?    @relation("TaskOwner", fields: [ownerUserId], references: [id])
+  subOwnerId      String?
+  subOwner        User?    @relation("TaskSubOwner", fields: [subOwnerId], references: [id])
   ownerRoleId     String?
   ownerRole       OwnerRole? @relation(fields: [ownerRoleId], references: [id])
   createdById     String
@@ -304,6 +380,11 @@ model Task {
   expectedOutput  String?
   lastUpdateAt    DateTime?
   droppedAt       DateTime?  // soft-delete timestamp; restore window = 30 days
+  dropReason      String?    // captured at drop-time when feature `drop_reason` is enabled
+  slaDueAt        DateTime?  // computed when feature `sla_engine` is enabled — see lib/sla.ts
+  slaBreachedAt   DateTime?  // set when SLA passes without completion
+  sourceInstructionId String? // link back to BossInstruction if activated from one
+  sourceParkingId String?     // link back to ParkingLot if promoted from there
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -314,6 +395,7 @@ model Task {
   @@index([verticalId, status])
   @@index([priorityId])
   @@index([ownerUserId])
+  @@index([subOwnerId])
   @@index([droppedAt])
 }
 
@@ -334,6 +416,13 @@ model TaskUpdate {
 // Boss Task Register
 // ────────────────────────────────────────────────────────────
 
+enum BossInstructionStatus {
+  CAPTURED
+  ACTIVATED
+  PARKED
+  CLOSED
+}
+
 model BossInstruction {
   id              String   @id @default(cuid())
   receivedAt      DateTime @default(now())
@@ -342,10 +431,15 @@ model BossInstruction {
   verticalId      String?
   capturedById    String
   capturedBy      User     @relation("InstructionCapturedBy", fields: [capturedById], references: [id])
-  status          String   @default("Captured") // Captured / Activated / Parked / Closed
+  // Legacy free-text status; kept for backward compat. New code reads `state` (enum).
+  status          String   @default("Captured")
+  state           BossInstructionStatus @default(CAPTURED)
   responseGiven   String?
   linkedTaskId    String?
+  activatedAt     DateTime?
   createdAt       DateTime @default(now())
+
+  @@index([state])
 }
 
 // ────────────────────────────────────────────────────────────

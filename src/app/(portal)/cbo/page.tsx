@@ -7,11 +7,20 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge, PriorityBadge } from "@/components/status-badges";
 import { Badge } from "@/components/ui/badge";
-import { formatRelative } from "@/lib/utils";
+import { formatRelative, formatDate } from "@/lib/utils";
 import { AlertTriangle, ArrowRight, CheckCircle2, Clock, Layers, Sparkles, Building2, Flame, Zap } from "lucide-react";
 import { MarkSeenOnLoad } from "./mark-seen";
+import { CountUp } from "@/components/count-up";
+import { ClockAndTimer } from "@/components/clock-and-timer";
+import { TaskFilterBar } from "./task-filter-bar";
+import { buildTaskWhere, type TaskFilterParams } from "./task-filter-utils";
+import type { Prisma } from "@prisma/client";
 
-export default async function CboHome() {
+export default async function CboHome({
+  searchParams,
+}: {
+  searchParams: TaskFilterParams;
+}) {
   const session = await auth();
   if (!isCBO(session?.user.systemRole) || !session?.user.id) redirect("/");
 
@@ -76,6 +85,43 @@ export default async function CboHome() {
     include: { priority: true, vertical: true, ownerRole: true },
   });
 
+  // ── Filter inputs from the URL (driven by TaskFilterBar) ──
+  const filterWhere = buildTaskWhere(searchParams);
+  // Always exclude DROPPED tasks from the master register, AND with whatever
+  // filters the user picked.
+  const fullRegisterWhere: Prisma.TaskWhereInput = {
+    AND: [{ status: { not: "DROPPED" } }, filterWhere],
+  };
+
+  // Full task register — every column the CBO table needs, filtered by the bar.
+  const [allTasks, allSubVerticals, allOwnerRoles, allOwnerUsers] = await Promise.all([
+    prisma.task.findMany({
+      where: fullRegisterWhere,
+      orderBy: [{ priority: { rank: "asc" } }, { createdAt: "asc" }],
+      include: {
+        vertical: true,
+        subVertical: true,
+        priority: true,
+        ownerRole: true,
+        ownerUser: true,
+        subOwner: true,
+        updates: { orderBy: { createdAt: "desc" }, take: 1 },
+      },
+    }),
+    prisma.subVertical.findMany({
+      where: { active: true },
+      orderBy: [{ vertical: { sortOrder: "asc" } }, { sortOrder: "asc" }],
+      include: { vertical: { select: { code: true } } },
+    }),
+    prisma.ownerRole.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
+    prisma.user.findMany({
+      where: { active: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, email: true },
+    }),
+  ]);
+  const allPriorities = await prisma.priority.findMany({ where: { active: true }, orderBy: { rank: "asc" } });
+
   const interventionList = await prisma.intervention.findMany({
     where: { resolved: false, OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: new Date() } }] },
     orderBy: { createdAt: "desc" },
@@ -115,11 +161,18 @@ export default async function CboHome() {
         description="Your single executive view — only decisions and exceptions surface here."
       />
 
-      {/* Daily briefing card */}
-      <Card className="border-primary/30 bg-gradient-to-br from-accent to-card">
-        <CardContent className="p-5">
+      {/* Compact IST clock + meeting timer strip — sits above the briefing. */}
+      <ClockAndTimer />
+
+      {/* Daily briefing card — aurora gradient slowly drifts; light-ray sweeps across */}
+      <Card
+        className="reveal relative overflow-hidden border-primary/30 bg-aurora animate-gradient-shift hover-lift"
+        style={{ animationDelay: "60ms" }}
+      >
+        <div className="sweep-overlay absolute inset-y-0 -left-1/4 animate-sweep" aria-hidden />
+        <CardContent className="relative p-5">
           <div className="flex items-start gap-3">
-            <div className="h-9 w-9 rounded-lg bg-primary text-primary-foreground grid place-items-center shrink-0">
+            <div className="h-9 w-9 rounded-lg bg-primary text-primary-foreground grid place-items-center shrink-0 animate-breathe">
               <Sparkles className="h-4 w-4" />
             </div>
             <div className="min-w-0">
@@ -138,12 +191,15 @@ export default async function CboHome() {
         </CardContent>
       </Card>
 
-      {/* RIGHT NOW — Critical action focus card (only shows when there's something urgent) */}
+      {/* RIGHT NOW — pulses red while there's something urgent. */}
       {(p1Delayed.length > 0 || interventionCount > 0) && (
-        <Card className="border-destructive/40 bg-gradient-to-br from-destructive/5 via-card to-card">
+        <Card
+          className="reveal border-destructive/40 bg-aurora-danger animate-gradient-shift animate-glow-pulse hover-lift"
+          style={{ animationDelay: "120ms" }}
+        >
           <CardContent className="p-5">
             <div className="flex items-start gap-3">
-              <div className="h-10 w-10 rounded-xl bg-destructive/10 text-destructive grid place-items-center shrink-0">
+              <div className="h-10 w-10 rounded-xl bg-destructive/10 text-destructive grid place-items-center shrink-0 animate-breathe">
                 <Flame className="h-5 w-5" />
               </div>
               <div className="min-w-0 flex-1">
@@ -192,11 +248,11 @@ export default async function CboHome() {
           </Link>
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          <Kpi icon={<Building2 className="h-4 w-4 text-primary" />} label="Total Verticals" value={verticalCount} hint="Operational areas" />
-          <Kpi icon={<Layers className="h-4 w-4 text-primary" />} label="Total Tasks" value={taskCount} hint="Active across all verticals" />
-          <Kpi icon={<AlertTriangle className="h-4 w-4 text-destructive" />} label="P1 Critical" value={p1Count} hint="Reviewed by you" />
-          <Kpi icon={<Clock className="h-4 w-4 text-warning" />} label="Delayed" value={delayedCount} hint="Need follow-up" />
-          <Kpi icon={<CheckCircle2 className="h-4 w-4 text-primary" />} label="Decisions Pending" value={interventionCount} hint="In your queue" />
+          <Kpi delayMs={180} icon={<Building2 className="h-4 w-4 text-primary" />} label="Total Verticals" value={verticalCount} hint="Operational areas" />
+          <Kpi delayMs={240} icon={<Layers className="h-4 w-4 text-primary" />} label="Total Tasks" value={taskCount} hint="Active across all verticals" />
+          <Kpi delayMs={300} icon={<AlertTriangle className="h-4 w-4 text-destructive" />} label="P1 Critical" value={p1Count} hint="Reviewed by you" />
+          <Kpi delayMs={360} icon={<Clock className="h-4 w-4 text-warning" />} label="Delayed" value={delayedCount} hint="Need follow-up" />
+          <Kpi delayMs={420} icon={<CheckCircle2 className="h-4 w-4 text-primary" />} label="Decisions Pending" value={interventionCount} hint="In your queue" />
         </div>
       </div>
 
@@ -273,24 +329,45 @@ export default async function CboHome() {
             </Link>
           </CardHeader>
           <CardContent className="space-y-2">
-            {verticalHealth.map(({ v, delayed, p1Open, total, tone }) => (
-              <Link
-                key={v.id}
-                href={`/cbo/verticals/${v.code}`}
-                className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5 hover:bg-accent transition-colors"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="h-8 w-8 rounded-md grid place-items-center text-xs font-bold text-white shrink-0" style={{ backgroundColor: v.colorHex }}>{v.code}</span>
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold truncate">{v.name}</div>
-                    <div className="text-xs text-muted-foreground truncate">
-                      {total} tasks · {p1Open} P1 open · {delayed} delayed
+            {verticalHealth.map(({ v, delayed, p1Open, total, score, tone }, i) => {
+              const barColor =
+                tone === "good" ? "bg-success" : tone === "watch" ? "bg-warning" : "bg-destructive";
+              const pct = Math.max(4, Math.min(100, score));
+              return (
+                <Link
+                  key={v.id}
+                  href={`/cbo/verticals/${v.code}`}
+                  className="reveal block rounded-lg border border-border px-3 py-2.5 hover:bg-accent hover:border-primary/40 transition-all duration-200"
+                  style={{ animationDelay: `${500 + i * 60}ms` }}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span
+                        className="h-8 w-8 rounded-md grid place-items-center text-xs font-bold text-white shrink-0"
+                        style={{ backgroundColor: v.colorHex }}
+                      >
+                        {v.code}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold truncate">{v.name}</div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {total} tasks · {p1Open} P1 open · {delayed} delayed
+                        </div>
+                      </div>
                     </div>
+                    <HealthDot tone={tone} />
                   </div>
-                </div>
-                <HealthDot tone={tone} />
-              </Link>
-            ))}
+                  {/* Animated health bar — fills from 0 → score on mount */}
+                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted/60">
+                    <div
+                      className={`grow-x h-full ${barColor}`}
+                      style={{ width: `${pct}%`, animationDelay: `${600 + i * 60}ms` }}
+                      aria-hidden
+                    />
+                  </div>
+                </Link>
+              );
+            })}
           </CardContent>
         </Card>
 
@@ -353,18 +430,239 @@ export default async function CboHome() {
           )}
         </CardContent>
       </Card>
+
+      {/* ── Filters for the Full Task Register ── */}
+      <TaskFilterBar
+        active={searchParams}
+        options={{
+          verticals: verticals.map((v) => ({ id: v.id, code: v.code, name: v.name })),
+          subVerticals: allSubVerticals.map((s) => ({
+            id: s.id,
+            name: s.name,
+            verticalCode: s.vertical.code,
+          })),
+          priorities: allPriorities.map((p) => ({ id: p.id, code: p.code, label: p.label })),
+          ownerRoles: allOwnerRoles.map((r) => ({ id: r.id, name: r.name })),
+          ownerUsers: allOwnerUsers.map((u) => ({ id: u.id, name: u.name, email: u.email })),
+        }}
+      />
+
+      {/* ── Full Task Register ── */}
+      <Card id="full-task-register">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle>Full Task Register</CardTitle>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {allTasks.length} task{allTasks.length !== 1 ? "s" : ""} match{allTasks.length === 1 ? "es" : ""} the filter
+            </p>
+          </div>
+          <Link href="/cbo/verticals" className="text-xs font-semibold text-primary inline-flex items-center gap-1">
+            By vertical <ArrowRight className="h-3 w-3" />
+          </Link>
+        </CardHeader>
+        <CardContent className="p-0">
+          {allTasks.length === 0 ? (
+            <div className="px-6 py-8 text-sm text-muted-foreground text-center">No active tasks found.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="border-b border-border bg-muted/40">
+                    <Th>Task ID</Th>
+                    <Th>Main Vertical</Th>
+                    <Th>Sub Vertical</Th>
+                    <Th minW="200px">Task / Activity</Th>
+                    <Th>Priority</Th>
+                    <Th minW="140px">Owner</Th>
+                    <Th minW="140px">Sub-Owner</Th>
+                    <Th>Deadline</Th>
+                    <Th>Status</Th>
+                    <Th>Last Update</Th>
+                    <Th minW="160px">Delay Reason</Th>
+                    <Th minW="160px">Support Needed</Th>
+                    <Th>Dr. BN?</Th>
+                    <Th minW="180px">Next Action</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allTasks.map((t, i) => {
+                    const lastUpdate = t.updates[0];
+                    const isDelayed = t.status === "DELAYED";
+                    return (
+                      <tr
+                        key={t.id}
+                        className={[
+                          "border-b border-border transition-colors hover:bg-accent/50",
+                          isDelayed ? "bg-destructive/[0.03]" : i % 2 === 0 ? "" : "bg-muted/20",
+                        ].join(" ")}
+                      >
+                        {/* Task ID */}
+                        <Td>
+                          <Link
+                            href={`/cbo/verticals/${t.vertical.code}`}
+                            className="font-mono text-xs font-semibold text-primary hover:underline whitespace-nowrap"
+                          >
+                            {t.code}
+                          </Link>
+                        </Td>
+
+                        {/* Main Vertical */}
+                        <Td>
+                          <span
+                            className="inline-block rounded px-1.5 py-0.5 text-[11px] font-bold text-white whitespace-nowrap"
+                            style={{ backgroundColor: t.vertical.colorHex }}
+                          >
+                            {t.vertical.name}
+                          </span>
+                        </Td>
+
+                        {/* Sub Vertical */}
+                        <Td>
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">
+                            {t.subVertical?.name || "—"}
+                          </span>
+                        </Td>
+
+                        {/* Task / Activity */}
+                        <Td>
+                          <Link
+                            href={`/cbo/verticals/${t.vertical.code}`}
+                            className="font-medium hover:text-primary hover:underline line-clamp-2 max-w-[220px]"
+                            title={t.title}
+                          >
+                            {t.title}
+                          </Link>
+                        </Td>
+
+                        {/* Priority */}
+                        <Td><PriorityBadge code={t.priority.code} /></Td>
+
+                        {/* Owner */}
+                        <Td>
+                          <div className="text-xs whitespace-nowrap">
+                            {t.ownerUser ? (
+                              <div>
+                                <span className="font-medium">{t.ownerUser.name}</span>
+                                {t.ownerRole && (
+                                  <div className="text-[10px] text-muted-foreground">{t.ownerRole.name}</div>
+                                )}
+                              </div>
+                            ) : t.ownerRole ? (
+                              <span className="text-muted-foreground">{t.ownerRole.name}</span>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </div>
+                        </Td>
+
+                        {/* Sub-Owner */}
+                        <Td>
+                          <div className="text-xs whitespace-nowrap">
+                            {t.subOwner ? (
+                              <span className="font-medium">{t.subOwner.name}</span>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </div>
+                        </Td>
+
+                        {/* Deadline */}
+                        <Td>
+                          {t.deadline ? (
+                            <span className={["text-xs whitespace-nowrap", new Date(t.deadline) < new Date() && t.status !== "COMPLETED" ? "text-destructive font-semibold" : "text-muted-foreground"].join(" ")}>
+                              {formatDate(t.deadline)}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </Td>
+
+                        {/* Status */}
+                        <Td><StatusBadge status={t.status} /></Td>
+
+                        {/* Last Update */}
+                        <Td>
+                          {lastUpdate ? (
+                            <div className="text-xs max-w-[160px]">
+                              <div className="text-muted-foreground whitespace-nowrap">{formatRelative(lastUpdate.createdAt)}</div>
+                              <div className="mt-0.5 line-clamp-2 text-foreground/70" title={lastUpdate.note}>
+                                {lastUpdate.note.replace(/^[^\w]+ ?/, "").slice(0, 60)}{lastUpdate.note.length > 60 ? "…" : ""}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">No updates yet</span>
+                          )}
+                        </Td>
+
+                        {/* Delay Reason */}
+                        <Td>
+                          <span className="text-xs text-muted-foreground line-clamp-2 max-w-[160px]" title={t.delayReason || undefined}>
+                            {t.delayReason || "—"}
+                          </span>
+                        </Td>
+
+                        {/* Support Needed */}
+                        <Td>
+                          <span className="text-xs text-muted-foreground line-clamp-2 max-w-[160px]" title={t.supportNeeded || undefined}>
+                            {t.supportNeeded || "—"}
+                          </span>
+                        </Td>
+
+                        {/* Dr. BN Intervention */}
+                        <Td>
+                          {t.intervention === "NO" ? (
+                            <span className="text-xs text-muted-foreground">No</span>
+                          ) : t.intervention === "YES" ? (
+                            <Badge variant="warning" className="text-[10px] whitespace-nowrap">Yes</Badge>
+                          ) : (
+                            <Badge variant="info" className="text-[10px] whitespace-nowrap">If delayed</Badge>
+                          )}
+                        </Td>
+
+                        {/* Next Action */}
+                        <Td>
+                          <span className="text-xs text-muted-foreground line-clamp-2 max-w-[180px]" title={t.nextAction || undefined}>
+                            {t.nextAction || "—"}
+                          </span>
+                        </Td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
-function Kpi({ icon, label, value, hint }: { icon: React.ReactNode; label: string; value: number | string; hint?: string }) {
+function Kpi({
+  icon,
+  label,
+  value,
+  hint,
+  delayMs = 0,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number | string;
+  hint?: string;
+  delayMs?: number;
+}) {
   return (
-    <Card>
+    <Card
+      className="reveal hover-lift overflow-hidden"
+      style={{ animationDelay: `${delayMs}ms` }}
+    >
       <CardContent className="p-4">
         <div className="flex items-center gap-2 text-xs font-bold uppercase text-muted-foreground">
           {icon} {label}
         </div>
-        <div className="mt-2 text-2xl font-bold sm:text-3xl">{value}</div>
+        <div className="pop-in mt-2 text-2xl font-bold sm:text-3xl tabular-nums">
+          {typeof value === "number" ? <CountUp value={value} /> : value}
+        </div>
         {hint ? <div className="mt-1 text-xs text-muted-foreground">{hint}</div> : null}
       </CardContent>
     </Card>
@@ -382,6 +680,25 @@ function HealthDot({ tone }: { tone: "good" | "watch" | "bad" }) {
       <span className={`h-2.5 w-2.5 rounded-full ${config.color}`} />
       <span className="text-[11px] font-semibold uppercase text-muted-foreground">{config.label}</span>
     </div>
+  );
+}
+
+function Th({ children, minW }: { children: React.ReactNode; minW?: string }) {
+  return (
+    <th
+      className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground whitespace-nowrap"
+      style={minW ? { minWidth: minW } : undefined}
+    >
+      {children}
+    </th>
+  );
+}
+
+function Td({ children }: { children: React.ReactNode }) {
+  return (
+    <td className="px-3 py-2.5 align-top">
+      {children}
+    </td>
   );
 }
 

@@ -349,6 +349,49 @@ async function main() {
   }
   console.log(`✓ ${createdTaskCount} tasks seeded`);
 
+  // Feature flags — bootstrap the registry so the Super Admin UI works on first
+  // visit. We only set defaults on insert; existing rows are left alone so the
+  // operator's toggles survive subsequent re-seeds.
+  const FEATURE_FLAGS = [
+    { key: "feature_flags_enforced", category: "core", label: "Enforce Feature Flags", description: "Master kill-switch.", defaultEnabled: true },
+    { key: "audit_log_v2", category: "security", label: "Comprehensive Audit Log", description: "Records every mutation with before/after snapshots." },
+    { key: "zod_validation", category: "security", label: "Strict Input Validation (Zod)", description: "Validate FormData with Zod schemas." },
+    { key: "task_pagination", category: "scale", label: "Cursor Pagination on Task Register", description: "Replaces 200-row cap with paged listing." },
+    { key: "task_bulk_actions", category: "scale", label: "Bulk Actions on Tasks", description: "Multi-select toolbar for bulk drop / reassign." },
+    { key: "csv_export", category: "scale", label: "CSV Export", description: "Download Task Register as CSV." },
+    { key: "drop_reason", category: "workflow", label: "Capture Reason on Drop", description: "Require and store a reason when dropping tasks." },
+    { key: "boss_instruction_workflow", category: "workflow", label: "Boss Instruction Activation Flow", description: "Activate / Park / Close states + draft Task." },
+    { key: "parking_auto_promote", category: "workflow", label: "Parking → Task Auto-Promote", description: "Activate a parking item into a draft Task." },
+    { key: "sla_engine", category: "workflow", label: "SLA Engine", description: "Computes slaDueAt from priority code." },
+    { key: "saved_views", category: "workflow", label: "Saved Filter Views", description: "Pin filter combos per user (Phase 2 scaffold)." },
+    { key: "notification_preferences", category: "workflow", label: "Per-User Notification Preferences", description: "Mute classes of notifications (Phase 2 scaffold)." },
+    { key: "breadcrumbs", category: "ux", label: "Breadcrumb Trail", description: "Adds breadcrumb above every portal page." },
+    { key: "dark_mode_toggle", category: "ux", label: "Dark Mode Toggle", description: "Sun/moon button in sidebar." },
+    { key: "toasts", category: "ux", label: "Toast Notifications", description: "Mounts the global Toaster." },
+    { key: "route_error_boundaries", category: "ux", label: "Per-Route Error Boundaries", description: "Friendly error pages per portal." },
+    { key: "optimistic_ui", category: "ux", label: "Optimistic UI on Mutations", description: "Update UI before server round-trip." },
+    { key: "backup_restore", category: "security", label: "Database Backup & Restore", description: "One-click pg_dump download + password-gated restore." },
+  ] as const;
+
+  try {
+    for (const f of FEATURE_FLAGS) {
+      await prisma.featureFlag.upsert({
+        where: { key: f.key },
+        update: { label: f.label, description: f.description, category: f.category },
+        create: {
+          key: f.key,
+          label: f.label,
+          description: f.description,
+          category: f.category,
+          enabled: ("defaultEnabled" in f && (f as { defaultEnabled?: boolean }).defaultEnabled) ?? false,
+        },
+      });
+    }
+    console.log(`✓ ${FEATURE_FLAGS.length} feature flags bootstrapped`);
+  } catch (err) {
+    console.warn("⚠️ Skipping feature-flag seed — run `npx prisma db push` first.", err);
+  }
+
   console.log("\n✅ Seed complete.");
   console.log("\nDefault logins:");
   console.log("  Super Admin → sadmin@rathinam.in / SuperAdmin@123");

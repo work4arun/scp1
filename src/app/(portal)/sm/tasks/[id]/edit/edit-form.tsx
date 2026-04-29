@@ -1,18 +1,20 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { AlertTriangle } from "lucide-react";
 import { updateTaskAction } from "./actions";
 import type { TaskStatus, TaskSource, InterventionFlag } from "@prisma/client";
 
-type Vertical = { id: string; code: string; name: string };
+type Vertical    = { id: string; code: string; name: string };
 type SubVertical = { id: string; name: string; verticalId: string };
-type Priority = { id: string; code: string; label: string };
-type OwnerRole = { id: string; name: string };
+type Priority    = { id: string; code: string; label: string };
+type OwnerRole   = { id: string; name: string };
 
 export function EditTaskForm({
   taskId,
@@ -33,18 +35,25 @@ export function EditTaskForm({
     subVerticalId: string | null;
     priorityId: string;
     ownerRoleId: string | null;
+    ownerUserEmail: string | null;
+    subOwnerEmail: string | null;
     deadline: string;
     frequency: string | null;
     source: TaskSource;
     expectedOutput: string | null;
     supportNeeded: string | null;
+    delayReason: string | null;
     nextAction: string | null;
     intervention: InterventionFlag;
     status: TaskStatus;
   };
 }) {
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [verticalId, setVerticalId] = useState(initial.verticalId);
+  const [status, setStatus] = useState<TaskStatus>(initial.status);
+  const [error, setError] = useState<string | null>(null);
+
   const filteredSubs = useMemo(
     () => subVerticals.filter((s) => s.verticalId === verticalId),
     [subVerticals, verticalId]
@@ -52,14 +61,32 @@ export function EditTaskForm({
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    setError(null);
     const form = new FormData(e.currentTarget);
     startTransition(async () => {
-      await updateTaskAction(taskId, form);
+      try {
+        const result = await updateTaskAction(taskId, form);
+        if (result && !result.success) {
+          setError(result.error);
+          return;
+        }
+        // redirect happens server-side on success
+      } catch {
+        setError("An unexpected error occurred. Please try again.");
+      }
     });
   }
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
+      {/* Inline error banner */}
+      {error && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Vertical" htmlFor="verticalId">
           <Select id="verticalId" name="verticalId" required value={verticalId} onChange={(e) => setVerticalId(e.target.value)}>
@@ -85,7 +112,13 @@ export function EditTaskForm({
           </Select>
         </Field>
         <Field label="Status" htmlFor="status">
-          <Select id="status" name="status" required defaultValue={initial.status}>
+          <Select
+            id="status"
+            name="status"
+            required
+            defaultValue={initial.status}
+            onChange={(e) => setStatus(e.target.value as TaskStatus)}
+          >
             <option value="NOT_STARTED">Not Started</option>
             <option value="IN_PROGRESS">In Progress</option>
             <option value="WAITING_FOR_INPUT">Waiting for Input</option>
@@ -100,6 +133,27 @@ export function EditTaskForm({
             <option value="">— Unassigned —</option>
             {ownerRoles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </Select>
+        </Field>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field label="Owner email" htmlFor="ownerEmail">
+          <Input
+            id="ownerEmail"
+            name="ownerEmail"
+            type="email"
+            defaultValue={initial.ownerUserEmail || ""}
+            placeholder="owner@example.com — must be a registered user"
+          />
+        </Field>
+        <Field label="Sub-owner email" htmlFor="subOwnerEmail">
+          <Input
+            id="subOwnerEmail"
+            name="subOwnerEmail"
+            type="email"
+            defaultValue={initial.subOwnerEmail || ""}
+            placeholder="sub-owner@example.com — optional follow-up contact"
+          />
         </Field>
       </div>
 
@@ -143,6 +197,17 @@ export function EditTaskForm({
         <Input id="supportNeeded" name="supportNeeded" defaultValue={initial.supportNeeded || ""} />
       </Field>
 
+      {/* Delay reason — always visible in edit form so it can be cleared too */}
+      <Field label="Delay reason" htmlFor="delayReason">
+        <Textarea
+          id="delayReason"
+          name="delayReason"
+          defaultValue={initial.delayReason || ""}
+          placeholder={status === "DELAYED" ? "Explain why this task is delayed…" : "Only needed when status is Delayed"}
+          className={status === "DELAYED" ? "border-warning/60 focus:border-warning" : ""}
+        />
+      </Field>
+
       <Field label="Next action" htmlFor="nextAction">
         <Textarea id="nextAction" name="nextAction" defaultValue={initial.nextAction || ""} />
       </Field>
@@ -156,7 +221,7 @@ export function EditTaskForm({
       </Field>
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end pt-2">
-        <Button type="button" variant="outline" onClick={() => history.back()}>Cancel</Button>
+        <Button type="button" variant="outline" onClick={() => { setError(null); history.back(); }}>Cancel</Button>
         <Button type="submit" disabled={pending}>{pending ? "Saving…" : "Save changes"}</Button>
       </div>
     </form>

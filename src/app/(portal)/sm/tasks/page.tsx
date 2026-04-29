@@ -9,14 +9,15 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Archive } from "lucide-react";
+import { Plus, Archive, Download } from "lucide-react";
 import { BulkTaskList } from "./bulk-list";
 import type { TaskStatus, Prisma } from "@prisma/client";
+import { isEnabled } from "@/lib/features";
 
 export default async function SmTasks({
   searchParams,
 }: {
-  searchParams: { vertical?: string; priority?: string; status?: string; q?: string };
+  searchParams: { vertical?: string; priority?: string; status?: string; q?: string; page?: string };
 }) {
   const session = await auth();
   if (!canManageTasks(session?.user.systemRole)) redirect("/");
@@ -27,18 +28,45 @@ export default async function SmTasks({
   if (searchParams.status) where.status = searchParams.status as TaskStatus;
   if (searchParams.q) where.title = { contains: searchParams.q, mode: "insensitive" };
 
-  const [tasks, verticals, priorities, ownerRoles, droppedCount] = await Promise.all([
+  // Feature flags
+  const [paginationEnabled, bulkActionsEnabled, csvEnabled, dropReasonEnabled] = await Promise.all([
+    isEnabled("task_pagination"),
+    isEnabled("task_bulk_actions"),
+    isEnabled("csv_export"),
+    isEnabled("drop_reason"),
+  ]);
+
+  // Pagination — when the flag is on we use offset-based paging (page=N, 50/page).
+  // When OFF we keep the legacy single-page-of-200 behaviour.
+  const PAGE_SIZE = 50;
+  const pageNumber = Math.max(1, parseInt(searchParams.page || "1", 10) || 1);
+  const skip = paginationEnabled ? (pageNumber - 1) * PAGE_SIZE : 0;
+  const take = paginationEnabled ? PAGE_SIZE : 200;
+
+  const [tasks, totalActive, verticals, priorities, ownerRoles, droppedCount] = await Promise.all([
     prisma.task.findMany({
       where,
       orderBy: [{ priority: { rank: "asc" } }, { updatedAt: "desc" }],
       include: { vertical: true, priority: true, ownerRole: true, subVertical: true },
-      take: 200,
+      skip,
+      take,
     }),
+    paginationEnabled ? prisma.task.count({ where }) : Promise.resolve(0),
     prisma.vertical.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
     prisma.priority.findMany({ where: { active: true }, orderBy: { rank: "asc" } }),
     prisma.ownerRole.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
     prisma.task.count({ where: { status: "DROPPED" } }),
   ]);
+
+  const totalPages = paginationEnabled ? Math.max(1, Math.ceil(totalActive / PAGE_SIZE)) : 1;
+
+  // Preserve filters when building pagination + export links
+  const queryString = new URLSearchParams();
+  if (searchParams.vertical) queryString.set("vertical", searchParams.vertical);
+  if (searchParams.priority) queryString.set("priority", searchParams.priority);
+  if (searchParams.status) queryString.set("status", searchParams.status);
+  if (searchParams.q) queryString.set("q", searchParams.q);
+  const baseQs = queryString.toString();
 
   const rows = tasks.map((t) => ({
     id: t.id,
@@ -56,9 +84,20 @@ export default async function SmTasks({
     <div className="space-y-6 animate-fade-in">
       <PageHeader
         title="Task Register"
-        description={`${tasks.length} active task${tasks.length === 1 ? "" : "s"}`}
+        description={
+          paginationEnabled
+            ? `${totalActive} active task${totalActive === 1 ? "" : "s"} · page ${pageNumber} of ${totalPages}`
+            : `${tasks.length} active task${tasks.length === 1 ? "" : "s"}`
+        }
         action={
           <div className="flex flex-wrap gap-2">
+            {csvEnabled && (
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/api/export/tasks${baseQs ? `?${baseQs}` : ""}`}>
+                  <Download className="h-4 w-4" /> Export CSV
+                </Link>
+              </Button>
+            )}
             {droppedCount > 0 && (
               <Button asChild variant="outline" size="sm">
                 <Link href="/sm/dropped"><Archive className="h-4 w-4" /> Dropped ({droppedCount})</Link>
@@ -113,7 +152,41 @@ export default async function SmTasks({
         </CardContent>
       </Card>
 
-      <BulkTaskList tasks={rows} ownerRoles={ownerRoles.map((r) => ({ id: r.id, name: r.name }))} />
+      <BulkTaskList
+        tasks={rows}
+        ownerRoles={ownerRoles.map((r) => ({ id: r.id, name: r.name }))}
+        bulkActionsEnabled={bulkActionsEnabled}
+        dropReasonEnabled={dropReasonEnabled}
+      />
+
+      {paginationEnabled && totalPages > 1 && (
+        <nav className="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2 text-sm" aria-label="Pagination">
+          <div className="text-xs text-muted-foreground">
+            Showing {skip + 1}–{Math.min(skip + tasks.length, totalActive)} of {totalActive}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button asChild variant="outline" size="sm" disabled={pageNumber <= 1}>
+              <Link
+                href={`/sm/tasks?${new URLSearchParams({ ...(baseQs ? Object.fromEntries(new URLSearchParams(baseQs)) : {}), page: String(Math.max(1, pageNumber - 1)) }).toString()}`}
+                aria-disabled={pageNumber <= 1}
+              >
+                ← Previous
+              </Link>
+            </Button>
+            <span className="text-xs font-semibold">
+              {pageNumber} / {totalPages}
+            </span>
+            <Button asChild variant="outline" size="sm" disabled={pageNumber >= totalPages}>
+              <Link
+                href={`/sm/tasks?${new URLSearchParams({ ...(baseQs ? Object.fromEntries(new URLSearchParams(baseQs)) : {}), page: String(Math.min(totalPages, pageNumber + 1)) }).toString()}`}
+                aria-disabled={pageNumber >= totalPages}
+              >
+                Next →
+              </Link>
+            </Button>
+          </div>
+        </nav>
+      )}
     </div>
   );
 }

@@ -6,6 +6,10 @@ import { canManageTasks, canConfigureSystem } from "@/lib/rbac";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { TaskSource, InterventionFlag, TaskStatus } from "@prisma/client";
+import { sendTaskEmailToOwners } from "@/lib/email";
+import { notifyAllCBO } from "@/lib/notify";
+import { writeAudit } from "@/lib/audit";
+import { isEnabled } from "@/lib/features";
 
 const HUMAN_FIELD: Record<string, string> = {
   title: "Title",
@@ -13,15 +17,20 @@ const HUMAN_FIELD: Record<string, string> = {
   subVerticalId: "Sub-vertical",
   priorityId: "Priority",
   ownerRoleId: "Owner role",
+  ownerUserId: "Owner",
+  subOwnerId: "Sub-owner",
   deadline: "Deadline",
   frequency: "Frequency",
   source: "Source",
   expectedOutput: "Expected output",
   supportNeeded: "Support needed",
+  delayReason: "Delay reason",
   nextAction: "Next action",
   intervention: "Dr. BN intervention",
   status: "Status",
 };
+
+export type UpdateTaskResult = { success: false; error: string } | { success: true };
 
 async function ensureSm() {
   const session = await auth();
@@ -30,14 +39,60 @@ async function ensureSm() {
 }
 
 // ────────── EDIT ──────────
-export async function updateTaskAction(taskId: string, formData: FormData) {
+export async function updateTaskAction(taskId: string, formData: FormData): Promise<UpdateTaskResult> {
+  const session = await auth();
   const userId = await ensureSm();
 
   const existing = await prisma.task.findUnique({
     where: { id: taskId },
-    include: { vertical: true, subVertical: true, priority: true, ownerRole: true },
+    include: {
+      vertical: true,
+      subVertical: true,
+      priority: true,
+      ownerRole: true,
+      ownerUser: true,
+      subOwner: true,
+    },
   });
   if (!existing) throw new Error("Task not found");
+
+  // ── Resolve owner by email ──
+  const ownerEmailInput = ((formData.get("ownerEmail") as string) || "").trim().toLowerCase();
+  let ownerUserId: string | null = existing.ownerUserId;
+  let newOwnerUser: { id: string; name: string; email: string } | null = null;
+
+  if (ownerEmailInput === "") {
+    ownerUserId = null;
+  } else if (ownerEmailInput !== (existing.ownerUser?.email ?? "")) {
+    const found = await prisma.user.findUnique({
+      where: { email: ownerEmailInput },
+      select: { id: true, name: true, email: true, active: true },
+    });
+    if (!found || !found.active) {
+      return { success: false, error: `No active user found with email "${ownerEmailInput}". Please check and try again.` };
+    }
+    ownerUserId = found.id;
+    newOwnerUser = found;
+  }
+
+  // ── Resolve sub-owner by email ──
+  const subOwnerEmailInput = ((formData.get("subOwnerEmail") as string) || "").trim().toLowerCase();
+  let subOwnerId: string | null = existing.subOwnerId;
+  let newSubOwnerUser: { id: string; name: string; email: string } | null = null;
+
+  if (subOwnerEmailInput === "") {
+    subOwnerId = null;
+  } else if (subOwnerEmailInput !== (existing.subOwner?.email ?? "")) {
+    const found = await prisma.user.findUnique({
+      where: { email: subOwnerEmailInput },
+      select: { id: true, name: true, email: true, active: true },
+    });
+    if (!found || !found.active) {
+      return { success: false, error: `No active user found with email "${subOwnerEmailInput}". Please check and try again.` };
+    }
+    subOwnerId = found.id;
+    newSubOwnerUser = found;
+  }
 
   // Build the patch
   const patch: Partial<{
@@ -46,11 +101,14 @@ export async function updateTaskAction(taskId: string, formData: FormData) {
     subVerticalId: string | null;
     priorityId: string;
     ownerRoleId: string | null;
+    ownerUserId: string | null;
+    subOwnerId: string | null;
     deadline: Date | null;
     frequency: string | null;
     source: TaskSource;
     expectedOutput: string | null;
     supportNeeded: string | null;
+    delayReason: string | null;
     nextAction: string | null;
     intervention: InterventionFlag;
     status: TaskStatus;
@@ -61,10 +119,13 @@ export async function updateTaskAction(taskId: string, formData: FormData) {
     subVerticalId: (formData.get("subVerticalId") as string) || null,
     priorityId: String(formData.get("priorityId") || ""),
     ownerRoleId: (formData.get("ownerRoleId") as string) || null,
+    ownerUserId,
+    subOwnerId,
     frequency: (formData.get("frequency") as string) || null,
     source: ((formData.get("source") as string) || existing.source) as TaskSource,
     expectedOutput: (formData.get("expectedOutput") as string) || null,
     supportNeeded: (formData.get("supportNeeded") as string) || null,
+    delayReason: (formData.get("delayReason") as string) || null,
     nextAction: (formData.get("nextAction") as string) || null,
     intervention: ((formData.get("intervention") as string) || "NO") as InterventionFlag,
     status: ((formData.get("status") as string) || existing.status) as TaskStatus,
@@ -94,6 +155,100 @@ export async function updateTaskAction(taskId: string, formData: FormData) {
   revalidatePath("/sm/tasks");
   revalidatePath("/sm");
   revalidatePath("/cbo");
+
+  // ── Email notifications ──
+  const updaterName = session?.user.name || "Strategic Manager";
+  const changedSummary = diffs.join("\n");
+
+  const taskDeadline = deadlineStr || (existing.deadline ? existing.deadline.toISOString().slice(0, 10) : null);
+  const priorityLabel = existing.priority ? `${existing.priority.code} — ${existing.priority.label}` : "Unknown";
+  const taskTitle = patch.title || existing.title;
+
+  // ── Email: newly assigned owner / sub-owner ──
+  if (newOwnerUser || newSubOwnerUser) {
+    await sendTaskEmailToOwners({
+      owner: newOwnerUser,
+      subOwner: newSubOwnerUser,
+      taskCode: existing.code,
+      taskTitle,
+      taskId,
+      verticalName: existing.vertical.name,
+      priorityLabel,
+      deadline: taskDeadline,
+      eventType: "assigned",
+      updatedByName: updaterName,
+    });
+  }
+
+  // ── Email: notify OLD owner that they've been removed ──
+  const ownerWasRemoved = existing.ownerUser && ownerUserId !== existing.ownerUserId;
+  const subOwnerWasRemoved = existing.subOwner && subOwnerId !== existing.subOwnerId;
+  if (ownerWasRemoved && existing.ownerUser) {
+    await sendTaskEmailToOwners({
+      owner: { email: existing.ownerUser.email, name: existing.ownerUser.name },
+      subOwner: subOwnerWasRemoved && existing.subOwner ? { email: existing.subOwner.email, name: existing.subOwner.name } : null,
+      taskCode: existing.code,
+      taskTitle,
+      taskId,
+      verticalName: existing.vertical.name,
+      priorityLabel,
+      deadline: taskDeadline,
+      eventType: "unassigned" as "updated",   // reuse "updated" event type
+      updatedByName: updaterName,
+      changedSummary: "You have been removed as owner of this task.",
+    });
+  } else if (subOwnerWasRemoved && existing.subOwner && !ownerWasRemoved) {
+    await sendTaskEmailToOwners({
+      owner: null,
+      subOwner: { email: existing.subOwner.email, name: existing.subOwner.name },
+      taskCode: existing.code,
+      taskTitle,
+      taskId,
+      verticalName: existing.vertical.name,
+      priorityLabel,
+      deadline: taskDeadline,
+      eventType: "updated",
+      updatedByName: updaterName,
+      changedSummary: "You have been removed as sub-owner of this task.",
+    });
+  }
+
+  // ── Email: existing (unchanged) owner/sub-owner on other field changes ──
+  if (diffs.length > 0) {
+    const retainedOwner = ownerUserId && ownerUserId === existing.ownerUserId && existing.ownerUser && !newOwnerUser
+      ? { email: existing.ownerUser.email, name: existing.ownerUser.name }
+      : null;
+    const retainedSubOwner = subOwnerId && subOwnerId === existing.subOwnerId && existing.subOwner && !newSubOwnerUser
+      ? { email: existing.subOwner.email, name: existing.subOwner.name }
+      : null;
+
+    if (retainedOwner || retainedSubOwner) {
+      await sendTaskEmailToOwners({
+        owner: retainedOwner,
+        subOwner: retainedSubOwner,
+        taskCode: existing.code,
+        taskTitle,
+        taskId,
+        verticalName: existing.vertical.name,
+        priorityLabel,
+        deadline: taskDeadline,
+        eventType: "updated",
+        updatedByName: updaterName,
+        changedSummary,
+      });
+    }
+  }
+
+  // ── In-app CBO notification ──
+  await notifyAllCBO({
+    kind: "task.updated",
+    title: `Task updated in ${existing.vertical.name}`,
+    body: `${existing.code} · ${taskTitle}`,
+    link: `/cbo/verticals/${existing.vertical.code}`,
+    refId: taskId,
+    senderId: userId,
+  });
+
   redirect(`/sm/tasks/${taskId}`);
 }
 
@@ -113,18 +268,38 @@ export async function softDeleteTaskAction(taskId: string, reason: string) {
     throw new Error("This task has an open escalation to Dr. BN. Resolve the intervention first, or ask Super Admin to delete.");
   }
 
-  await prisma.task.update({
-    where: { id: taskId },
-    data: { status: "DROPPED", droppedAt: new Date() },
-  });
+  // When the `drop_reason` flag is on, require a reason and persist it.
+  const reasonRequired = await isEnabled("drop_reason");
+  const cleanedReason = (reason || "").trim();
+  if (reasonRequired && cleanedReason.length === 0) {
+    throw new Error("A reason is required to drop this task. Please describe why.");
+  }
+
+  const dropData: { status: "DROPPED"; droppedAt: Date; dropReason?: string | null } = {
+    status: "DROPPED",
+    droppedAt: new Date(),
+  };
+  if (reasonRequired) dropData.dropReason = cleanedReason || null;
+
+  const updated = await prisma.task.update({ where: { id: taskId }, data: dropData });
 
   await prisma.taskUpdate.create({
     data: {
       taskId,
       authorId: userId,
-      note: `🗑️ Dropped — Reason: ${reason || "(none given)"}`,
+      note: `🗑️ Dropped — Reason: ${cleanedReason || "(none given)"}`,
       newStatus: "DROPPED",
     },
+  });
+
+  await writeAudit({
+    actorId: userId,
+    action: "task.drop",
+    entity: "Task",
+    entityId: taskId,
+    before: task,
+    after: updated,
+    note: cleanedReason || null,
   });
 
   revalidatePath(`/sm/tasks/${taskId}`);
@@ -169,30 +344,34 @@ export async function duplicateTaskAction(taskId: string): Promise<string> {
 
   const vertical = await prisma.vertical.findUnique({ where: { id: original.verticalId } });
   if (!vertical) throw new Error("Vertical not found");
-  const count = await prisma.task.count({ where: { verticalId: vertical.id } });
-  const newCode = `${vertical.code}-${String(count + 1).padStart(3, "0")}`;
 
-  const created = await prisma.task.create({
-    data: {
-      code: newCode,
-      title: `${original.title} (copy)`,
-      description: original.description,
-      verticalId: original.verticalId,
-      subVerticalId: original.subVerticalId,
-      priorityId: original.priorityId,
-      ownerRoleId: original.ownerRoleId,
-      ownerUserId: original.ownerUserId,
-      createdById: userId,
-      deadline: null,
-      frequency: original.frequency,
-      source: original.source,
-      supportNeeded: original.supportNeeded,
-      nextAction: original.nextAction,
-      intervention: "NO",
-      expectedOutput: original.expectedOutput,
-      status: "NOT_STARTED",
-      lastUpdateAt: new Date(),
-    },
+  // Wrap count + create in a transaction to prevent duplicate codes under concurrent requests
+  const created = await prisma.$transaction(async (tx) => {
+    const count = await tx.task.count({ where: { verticalId: vertical.id } });
+    const newCode = `${vertical.code}-${String(count + 1).padStart(3, "0")}`;
+    return tx.task.create({
+      data: {
+        code: newCode,
+        title: `${original.title} (copy)`,
+        description: original.description,
+        verticalId: original.verticalId,
+        subVerticalId: original.subVerticalId,
+        priorityId: original.priorityId,
+        ownerRoleId: original.ownerRoleId,
+        ownerUserId: original.ownerUserId,
+        subOwnerId: original.subOwnerId,
+        createdById: userId,
+        deadline: null,
+        frequency: original.frequency,
+        source: original.source,
+        supportNeeded: original.supportNeeded,
+        nextAction: original.nextAction,
+        intervention: "NO",
+        expectedOutput: original.expectedOutput,
+        status: "NOT_STARTED",
+        lastUpdateAt: new Date(),
+      },
+    });
   });
 
   await prisma.taskUpdate.create({
@@ -206,10 +385,16 @@ export async function duplicateTaskAction(taskId: string): Promise<string> {
 // ────────── BULK ACTIONS ──────────
 export async function bulkUpdateAction(
   ids: string[],
-  patch: { status?: TaskStatus; ownerRoleId?: string | null; action?: "drop" }
+  patch: { status?: TaskStatus; ownerRoleId?: string | null; action?: "drop"; reason?: string }
 ) {
   const userId = await ensureSm();
   if (ids.length === 0) return;
+  // Bulk endpoint is feature-flagged. When task_bulk_actions is OFF the
+  // toolbar is hidden and we additionally refuse the action server-side so
+  // the API surface stays consistent.
+  if (!(await isEnabled("task_bulk_actions"))) {
+    throw new Error("Bulk actions are disabled. Enable the feature flag at /admin/features.");
+  }
   const session = await auth();
 
   if (patch.action === "drop") {
@@ -220,12 +405,36 @@ export async function bulkUpdateAction(
       });
       if (blocked > 0) throw new Error(`${blocked} of the selected tasks have open escalations. Resolve them first.`);
     }
-    await prisma.task.updateMany({
-      where: { id: { in: ids } },
-      data: { status: "DROPPED", droppedAt: new Date() },
-    });
+
+    const reasonRequired = await isEnabled("drop_reason");
+    const cleanedReason = (patch.reason || "").trim();
+    if (reasonRequired && cleanedReason.length === 0) {
+      throw new Error("A reason is required to drop tasks. Please describe why.");
+    }
+
+    const updateData: { status: "DROPPED"; droppedAt: Date; dropReason?: string | null } = {
+      status: "DROPPED",
+      droppedAt: new Date(),
+    };
+    if (reasonRequired) updateData.dropReason = cleanedReason || null;
+
+    await prisma.task.updateMany({ where: { id: { in: ids } }, data: updateData });
     await prisma.taskUpdate.createMany({
-      data: ids.map((id) => ({ taskId: id, authorId: userId, note: "🗑️ Bulk dropped.", newStatus: "DROPPED" as TaskStatus })),
+      data: ids.map((id) => ({
+        taskId: id,
+        authorId: userId,
+        note: cleanedReason ? `🗑️ Bulk dropped — Reason: ${cleanedReason}` : "🗑️ Bulk dropped.",
+        newStatus: "DROPPED" as TaskStatus,
+      })),
+    });
+
+    await writeAudit({
+      actorId: userId,
+      action: "task.bulk_drop",
+      entity: "Task",
+      entityId: null,
+      after: { ids, count: ids.length, reason: cleanedReason || null },
+      note: `Bulk dropped ${ids.length} task(s)`,
     });
   } else {
     const data: { status?: TaskStatus; ownerRoleId?: string | null; lastUpdateAt: Date } = { lastUpdateAt: new Date() };
@@ -243,6 +452,15 @@ export async function bulkUpdateAction(
         newStatus: patch.status ?? null,
       })),
     });
+
+    await writeAudit({
+      actorId: userId,
+      action: "task.bulk_update",
+      entity: "Task",
+      entityId: null,
+      after: { ids, count: ids.length, patch: { status: patch.status, ownerRoleId: patch.ownerRoleId } },
+      note: `Bulk updated ${ids.length} task(s)`,
+    });
   }
 
   revalidatePath("/sm/tasks");
@@ -251,7 +469,10 @@ export async function bulkUpdateAction(
 }
 
 // ───────────────────────── helpers ─────────────────────────
-type ExistingTask = Awaited<ReturnType<typeof prisma.task.findUnique<{ where: { id: string }, include: { vertical: true; subVertical: true; priority: true; ownerRole: true } }>>>;
+type ExistingTask = Awaited<ReturnType<typeof prisma.task.findUnique<{
+  where: { id: string };
+  include: { vertical: true; subVertical: true; priority: true; ownerRole: true; ownerUser: true; subOwner: true };
+}>>>;
 type Patch = Record<string, unknown>;
 
 async function resolveLabels(patch: Patch, existing: ExistingTask) {
@@ -281,6 +502,28 @@ async function resolveLabels(patch: Patch, existing: ExistingTask) {
       toName = r?.name ?? null;
     }
     labels.ownerRoleId = { from: existing.ownerRole?.name ?? null, to: toName };
+  }
+  if ((patch.ownerUserId ?? null) !== (existing.ownerUserId ?? null)) {
+    let toName: string | null = null;
+    if (patch.ownerUserId) {
+      const u = await prisma.user.findUnique({ where: { id: patch.ownerUserId as string }, select: { name: true, email: true } });
+      toName = u ? `${u.name} (${u.email})` : null;
+    }
+    labels.ownerUserId = {
+      from: existing.ownerUser ? `${existing.ownerUser.name} (${existing.ownerUser.email})` : null,
+      to: toName,
+    };
+  }
+  if ((patch.subOwnerId ?? null) !== (existing.subOwnerId ?? null)) {
+    let toName: string | null = null;
+    if (patch.subOwnerId) {
+      const u = await prisma.user.findUnique({ where: { id: patch.subOwnerId as string }, select: { name: true, email: true } });
+      toName = u ? `${u.name} (${u.email})` : null;
+    }
+    labels.subOwnerId = {
+      from: existing.subOwner ? `${existing.subOwner.name} (${existing.subOwner.email})` : null,
+      to: toName,
+    };
   }
   return labels;
 }
