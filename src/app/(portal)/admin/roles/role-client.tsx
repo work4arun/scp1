@@ -22,14 +22,20 @@ import {
 export function OwnerRoleForm({ initial }: { initial?: { id?: string; name?: string; description?: string | null } }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    setError(null);
     const form = new FormData(e.currentTarget);
     startTransition(async () => {
-      await upsertOwnerRoleAction(form);
-      if (!initial?.id) (e.currentTarget as HTMLFormElement).reset();
-      router.refresh();
+      const res = await upsertOwnerRoleAction(form);
+      if (res && !res.ok) {
+        setError(res.error || "An error occurred.");
+      } else {
+        if (!initial?.id) (e.target as HTMLFormElement).reset();
+        router.refresh();
+      }
     });
   }
 
@@ -44,6 +50,11 @@ export function OwnerRoleForm({ initial }: { initial?: { id?: string; name?: str
         <Label htmlFor="description">Description</Label>
         <Input id="description" name="description" placeholder="What does this role own?" defaultValue={initial?.description || ""} />
       </div>
+      {error && (
+        <div className="sm:col-span-6 rounded-md border border-destructive/40 bg-destructive/5 p-2.5 text-xs text-destructive">
+          {error}
+        </div>
+      )}
       <div className="sm:col-span-6 flex justify-end">
         <Button type="submit" disabled={pending}>{pending ? "Saving…" : initial?.id ? "Update" : "Add role"}</Button>
       </div>
@@ -107,7 +118,11 @@ export function OwnerRoleRow({
             disabled={pending || r.taskCount > 0}
             onClick={() => {
               if (!confirm(`Delete role "${r.name}"?`)) return;
-              startTransition(async () => { await deleteOwnerRoleAction(r.id); router.refresh(); });
+              startTransition(async () => { 
+                const res = await deleteOwnerRoleAction(r.id);
+                if (res && !res.ok) alert(res.error);
+                else router.refresh(); 
+              });
             }}
             aria-label="Delete role"
           >

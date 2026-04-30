@@ -16,30 +16,43 @@ async function ensureAdmin() {
 //  Owner Role CRUD
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function upsertOwnerRoleAction(formData: FormData) {
-  await ensureAdmin();
-  const id = (formData.get("id") as string) || null;
-  const name = String(formData.get("name") || "").trim();
-  const description = (formData.get("description") as string) || null;
-  if (!name) return;
+export async function upsertOwnerRoleAction(formData: FormData): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await ensureAdmin();
+    const id = (formData.get("id") as string) || null;
+    const name = String(formData.get("name") || "").trim();
+    const description = (formData.get("description") as string) || null;
+    if (!name) return { ok: false, error: "Role name is required." };
 
-  if (id) {
-    await prisma.ownerRole.update({ where: { id }, data: { name, description } });
-  } else {
-    await prisma.ownerRole.create({ data: { name, description } });
+    if (id) {
+      await prisma.ownerRole.update({ where: { id }, data: { name, description } });
+    } else {
+      await prisma.ownerRole.create({ data: { name, description } });
+    }
+    revalidatePath("/admin/roles");
+    return { ok: true };
+  } catch (err: any) {
+    if (err.code === "P2002") {
+      return { ok: false, error: "A role with this name already exists." };
+    }
+    return { ok: false, error: err.message || "An unexpected error occurred." };
   }
-  revalidatePath("/admin/roles");
 }
 
-export async function deleteOwnerRoleAction(id: string) {
-  await ensureAdmin();
-  const [taskCount, userCount] = await Promise.all([
-    prisma.task.count({ where: { ownerRoleId: id } }),
-    prisma.user.count({ where: { ownerRoleId: id } }),
-  ]);
-  if (taskCount > 0 || userCount > 0) throw new Error("Role is in use; cannot delete.");
-  await prisma.ownerRole.delete({ where: { id } });
-  revalidatePath("/admin/roles");
+export async function deleteOwnerRoleAction(id: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await ensureAdmin();
+    const [taskCount, userCount] = await Promise.all([
+      prisma.task.count({ where: { ownerRoleId: id } }),
+      prisma.user.count({ where: { ownerRoleId: id } }),
+    ]);
+    if (taskCount > 0 || userCount > 0) return { ok: false, error: "Role is in use; cannot delete." };
+    await prisma.ownerRole.delete({ where: { id } });
+    revalidatePath("/admin/roles");
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err.message || "An unexpected error occurred." };
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
