@@ -27,8 +27,21 @@ export async function upsertOwnerRoleAction(
     if (!name) return { ok: false, error: "Role name is required." };
 
     if (id) {
+      // On rename, check the new name isn't taken by a *different* role.
+      const conflict = await prisma.ownerRole.findFirst({
+        where: { name, NOT: { id } },
+        select: { id: true },
+      });
+      if (conflict) return { ok: false, error: "A role with this name already exists." };
       await prisma.ownerRole.update({ where: { id }, data: { name, description } });
     } else {
+      // Pre-check avoids a P2002 unique-constraint error reaching Prisma's own
+      // error logger (which logs before the application catch block runs).
+      const existing = await prisma.ownerRole.findUnique({
+        where: { name },
+        select: { id: true },
+      });
+      if (existing) return { ok: false, error: "A role with this name already exists." };
       await prisma.ownerRole.create({ data: { name, description } });
     }
     revalidatePath("/admin/roles");
