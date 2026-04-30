@@ -16,7 +16,9 @@ async function ensureAdmin() {
 //  Owner Role CRUD
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function upsertOwnerRoleAction(formData: FormData): Promise<{ ok: boolean; error?: string }> {
+export async function upsertOwnerRoleAction(
+  formData: FormData,
+): Promise<{ ok: boolean; error?: string }> {
   try {
     await ensureAdmin();
     const id = (formData.get("id") as string) || null;
@@ -31,11 +33,29 @@ export async function upsertOwnerRoleAction(formData: FormData): Promise<{ ok: b
     }
     revalidatePath("/admin/roles");
     return { ok: true };
-  } catch (err: any) {
-    if (err.code === "P2002") {
-      return { ok: false, error: "A role with this name already exists." };
+  } catch (err: unknown) {
+    // Always log the full error server-side so deployment issues (e.g. a
+    // missing column from a forgotten `prisma db push`) are visible in the
+    // container logs. The user-facing message stays short.
+    console.error("[upsertOwnerRoleAction] failed:", err);
+
+    const e = err as { code?: string; message?: string };
+    if (e?.code === "P2002") return { ok: false, error: "A role with this name already exists." };
+    if (e?.code === "P2021") {
+      return {
+        ok: false,
+        error:
+          "Database schema is out of date. An admin needs to run `prisma db push` against the live database.",
+      };
     }
-    return { ok: false, error: err.message || "An unexpected error occurred." };
+    if (e?.code === "P2022" || /column .* does not exist/i.test(e?.message || "")) {
+      return {
+        ok: false,
+        error:
+          "The OwnerRole table is missing newly-added columns. Run `npx prisma db push` inside the running container, then try again.",
+      };
+    }
+    return { ok: false, error: e?.message || "An unexpected error occurred." };
   }
 }
 

@@ -27,14 +27,26 @@ export function OwnerRoleForm({ initial }: { initial?: { id?: string; name?: str
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
-    const form = new FormData(e.currentTarget);
+    // Capture the form element synchronously — the synthetic event's
+    // `target/currentTarget` aren't safe to read after the awaited action,
+    // and a thrown TypeError on .reset() would silently swallow router.refresh.
+    const formEl = e.currentTarget;
+    const form = new FormData(formEl);
     startTransition(async () => {
-      const res = await upsertOwnerRoleAction(form);
-      if (res && !res.ok) {
-        setError(res.error || "An error occurred.");
-      } else {
-        if (!initial?.id) (e.target as HTMLFormElement).reset();
+      try {
+        const res = await upsertOwnerRoleAction(form);
+        if (!res || !res.ok) {
+          setError(res?.error || "An error occurred.");
+          return;
+        }
+        if (!initial?.id) {
+          try { formEl.reset(); } catch { /* form already unmounted */ }
+        }
         router.refresh();
+      } catch (err) {
+        // Catch network / unhandled exceptions so the spinner doesn't hang.
+        console.error("[OwnerRoleForm] submit failed:", err);
+        setError(err instanceof Error ? err.message : "Unexpected error.");
       }
     });
   }
