@@ -43,6 +43,9 @@ export function PriorityBadge({ code, color }: { code: string; color?: string })
   );
 }
 
-export const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = (Object.keys(STATUS_LABEL) as TaskStatus[]).map(
-  (s) => ({ value: s, label: STATUS_LABEL[s] })
-);
+// User-pickable statuses — DROPPED is intentionally omitted because tasks are
+// hard-deleted now (the old soft-delete archive has been retired). Legacy rows
+// that still carry `DROPPED` will continue to render via STATUS_LABEL.
+export const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = (Object.keys(STATUS_LABEL) as TaskStatus[])
+  .filter((s) => s !== "DROPPED")
+  .map((s) => ({ value: s, label: STATUS_LABEL[s] }));
