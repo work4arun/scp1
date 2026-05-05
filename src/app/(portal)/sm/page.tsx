@@ -14,28 +14,58 @@ export default async function SmHome() {
   const session = await auth();
   if (!canManageTasks(session?.user.systemRole)) redirect("/");
 
-  const [p1, delayed, waiting, openEscalations] = await Promise.all([
-    prisma.task.count({ where: { priority: { code: "P1" }, status: { not: "COMPLETED" } } }),
-    prisma.task.count({ where: { status: "DELAYED" } }),
-    prisma.task.count({ where: { status: { in: ["WAITING_FOR_INPUT", "WAITING_FOR_APPROVAL"] } } }),
+  // ── "Today" window — local-day boundaries
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(startOfDay);
+  endOfDay.setDate(endOfDay.getDate() + 1);
+
+  // A task counts as "today's" if any of these are true:
+  //   • it is due today (deadline within today)
+  //   • it was created today
+  //   • it has had a status update today (lastUpdateAt within today)
+  const todayFilter = {
+    OR: [
+      { deadline: { gte: startOfDay, lt: endOfDay } },
+      { createdAt: { gte: startOfDay, lt: endOfDay } },
+      { lastUpdateAt: { gte: startOfDay, lt: endOfDay } },
+    ],
+  };
+
+  const [p1Today, delayedToday, waitingToday, openEscalations, todaysTasks] = await Promise.all([
+    prisma.task.count({
+      where: { AND: [todayFilter, { priority: { code: "P1" }, status: { not: "COMPLETED" } }] },
+    }),
+    prisma.task.count({ where: { AND: [todayFilter, { status: "DELAYED" }] } }),
+    prisma.task.count({
+      where: { AND: [todayFilter, { status: { in: ["WAITING_FOR_INPUT", "WAITING_FOR_APPROVAL"] } }] },
+    }),
     prisma.intervention.count({ where: { resolved: false } }),
+    prisma.task.findMany({
+      where: todayFilter,
+      orderBy: [{ priority: { rank: "asc" } }, { deadline: "asc" }, { updatedAt: "desc" }],
+      include: { vertical: true, priority: true, ownerRole: true },
+    }),
   ]);
 
-  const myFollowups = await prisma.task.findMany({
-    where: {
-      OR: [
-        { status: "DELAYED" },
-        { status: "WAITING_FOR_INPUT" },
-        { intervention: "YES" },
-      ],
-    },
-    orderBy: [{ priority: { rank: "asc" } }, { updatedAt: "asc" }],
-    take: 8,
-    include: { vertical: true, priority: true, ownerRole: true },
+  // Pretty date string for the header — e.g. "Tuesday, 5 May 2026"
+  const todayLabel = startOfDay.toLocaleDateString("en-IN", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
   });
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Today's date — front-and-centre */}
+      <div className="rounded-lg border border-border bg-card px-4 py-3">
+        <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          Today
+        </div>
+        <div className="text-lg font-semibold">{todayLabel}</div>
+      </div>
+
       <PageHeader
         title="Today"
         description="Your daily control surface — capture, follow-up, escalate."
@@ -47,21 +77,23 @@ export default async function SmHome() {
       />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <KpiTile icon={<ListChecks className="h-4 w-4" />} label="Open P1" value={p1} href="/sm/tasks?priority=P1" />
-        <KpiTile icon={<Clock className="h-4 w-4 text-warning" />} label="Delayed" value={delayed} href="/sm/tasks?status=DELAYED" />
-        <KpiTile icon={<Inbox className="h-4 w-4 text-primary" />} label="Waiting" value={waiting} href="/sm/tasks?status=WAITING_FOR_INPUT" />
+        <KpiTile icon={<ListChecks className="h-4 w-4" />} label="P1 today" value={p1Today} href="/sm/tasks?priority=P1" />
+        <KpiTile icon={<Clock className="h-4 w-4 text-warning" />} label="Delayed today" value={delayedToday} href="/sm/tasks?status=DELAYED" />
+        <KpiTile icon={<Inbox className="h-4 w-4 text-primary" />} label="Waiting today" value={waitingToday} href="/sm/tasks?status=WAITING_FOR_INPUT" />
         <KpiTile icon={<AlertTriangle className="h-4 w-4 text-destructive" />} label="Escalations" value={openEscalations} href="/sm/intervention" />
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>My Follow-ups</CardTitle>
+          <CardTitle>Today&apos;s Tasks</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {myFollowups.length === 0 ? (
-            <div className="text-sm text-muted-foreground py-6 text-center">Nothing to chase. ✨</div>
+          {todaysTasks.length === 0 ? (
+            <div className="text-sm text-muted-foreground py-6 text-center">
+              Nothing scheduled, created, or updated today. ✨
+            </div>
           ) : (
-            myFollowups.map((t) => (
+            todaysTasks.map((t) => (
               <Link key={t.id} href={`/sm/tasks/${t.id}`} className="block">
                 <div className="rounded-lg border border-border p-3 hover:bg-accent transition-colors">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">

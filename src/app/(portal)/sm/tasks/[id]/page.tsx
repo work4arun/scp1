@@ -31,7 +31,6 @@ export default async function TaskDetail({ params }: { params: { id: string } })
   if (!task) notFound();
 
   const hasOpenEscalation = task.interventions.some((i) => !i.resolved);
-  const isDropped = task.status === "DROPPED";
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -42,9 +41,7 @@ export default async function TaskDetail({ params }: { params: { id: string } })
           <TaskActions
             taskId={task.id}
             code={task.code}
-            status={task.status}
             hasOpenEscalation={hasOpenEscalation}
-            droppedAtIso={task.droppedAt ? task.droppedAt.toISOString() : null}
           />
         }
       />
@@ -56,54 +53,47 @@ export default async function TaskDetail({ params }: { params: { id: string } })
           <Badge variant="warning">Dr. BN: {task.intervention === "YES" ? "Yes" : "Only if delayed"}</Badge>
         ) : null}
         {task.frequency ? <Badge variant="info">{task.frequency}</Badge> : null}
-        {isDropped && task.droppedAt ? (
-          <Badge variant="muted">Dropped {formatRelative(task.droppedAt)}</Badge>
-        ) : null}
       </div>
 
-      {!isDropped && (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle>Add Status Update</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <TaskUpdateForm taskId={task.id} currentStatus={task.status} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Details</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <Detail label="Owner role" value={task.ownerRole?.name || "—"} />
-              <Detail
-                label="Owner"
-                value={task.ownerUser ? `${task.ownerUser.name} (${task.ownerUser.email})` : "—"}
-              />
-              <Detail
-                label="Sub-owner"
-                value={task.subOwner ? `${task.subOwner.name} (${task.subOwner.email})` : "—"}
-              />
-              <Detail label="Deadline" value={task.deadline ? formatDate(task.deadline) : "—"} />
-              <Detail label="Frequency" value={task.frequency || "—"} />
-              <Detail label="Source" value={task.source.replace(/_/g, " ")} />
-              <Detail label="Support needed" value={task.supportNeeded || "—"} />
-              <Detail label="Delay reason" value={task.delayReason || "—"} />
-              <Detail label="Next action" value={task.nextAction || "—"} />
-              <Detail label="Expected output" value={task.expectedOutput || "—"} />
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {!isDropped && (
-        <Card>
-          <CardHeader><CardTitle>Escalate to Dr. BN</CardTitle></CardHeader>
-          <CardContent><EscalateForm taskId={task.id} /></CardContent>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Add Status Update</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <TaskUpdateForm taskId={task.id} currentStatus={task.status} />
+          </CardContent>
         </Card>
-      )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Details</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <Detail label="Owner role" value={task.ownerRole?.name || "—"} />
+            <Detail
+              label="Owner"
+              value={task.ownerUser ? `${task.ownerUser.name} (${task.ownerUser.email})` : "—"}
+            />
+            <Detail
+              label="Sub-owner"
+              value={task.subOwner ? `${task.subOwner.name} (${task.subOwner.email})` : "—"}
+            />
+            <Detail label="Deadline" value={task.deadline ? formatDate(task.deadline) : "—"} />
+            <Detail label="Frequency" value={task.frequency || "—"} />
+            <Detail label="Source" value={task.source.replace(/_/g, " ")} />
+            <Detail label="Support needed" value={task.supportNeeded || "—"} />
+            <Detail label="Delay reason" value={task.delayReason || "—"} />
+            <Detail label="Next action" value={task.nextAction || "—"} />
+            <Detail label="Expected output" value={task.expectedOutput || "—"} />
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader><CardTitle>Escalate to Dr. BN</CardTitle></CardHeader>
+        <CardContent><EscalateForm taskId={task.id} /></CardContent>
+      </Card>
 
       <Card>
         <CardHeader><CardTitle>Update History</CardTitle></CardHeader>

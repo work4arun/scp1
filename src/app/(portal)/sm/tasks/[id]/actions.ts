@@ -11,10 +11,18 @@ export async function addUpdateAction(taskId: string, formData: FormData) {
   const session = await auth();
   if (!canManageTasks(session?.user.systemRole) || !session?.user.id) throw new Error("Forbidden");
 
-  const note = String(formData.get("note") || "").trim();
+  const rawNote = String(formData.get("note") || "").trim();
   const newStatus = formData.get("status") as TaskStatus | "";
   const delayReason = (formData.get("delayReason") as string || "").trim() || null;
-  if (!note) return;
+
+  // Allow status-only updates: if the user only picked a new status without
+  // writing a note, auto-generate one for the audit trail.
+  if (!rawNote && !newStatus) return;
+  const note =
+    rawNote ||
+    (newStatus
+      ? `🔄 Status → ${String(newStatus).replace(/_/g, " ")}`
+      : "");
 
   await prisma.taskUpdate.create({
     data: {

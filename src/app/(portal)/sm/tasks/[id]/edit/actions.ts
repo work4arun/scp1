@@ -252,7 +252,9 @@ export async function updateTaskAction(taskId: string, formData: FormData): Prom
   redirect(`/sm/tasks/${taskId}`);
 }
 
-// ────────── SOFT DELETE (drop) ──────────
+// ────────── HARD DELETE ──────────
+// Tasks deleted from the SM portal are permanently removed — there is no
+// soft-delete archive any more. The `Dropped` archive feature has been retired.
 export async function softDeleteTaskAction(taskId: string, reason: string) {
   const userId = await ensureSm();
   const session = await auth();
@@ -268,72 +270,34 @@ export async function softDeleteTaskAction(taskId: string, reason: string) {
     throw new Error("This task has an open escalation to Dr. BN. Resolve the intervention first, or ask Super Admin to delete.");
   }
 
-  // When the `drop_reason` flag is on, require a reason and persist it.
-  const reasonRequired = await isEnabled("drop_reason");
   const cleanedReason = (reason || "").trim();
-  if (reasonRequired && cleanedReason.length === 0) {
-    throw new Error("A reason is required to drop this task. Please describe why.");
-  }
 
-  const dropData: { status: "DROPPED"; droppedAt: Date; dropReason?: string | null } = {
-    status: "DROPPED",
-    droppedAt: new Date(),
-  };
-  if (reasonRequired) dropData.dropReason = cleanedReason || null;
-
-  const updated = await prisma.task.update({ where: { id: taskId }, data: dropData });
-
-  await prisma.taskUpdate.create({
-    data: {
-      taskId,
-      authorId: userId,
-      note: `🗑️ Dropped — Reason: ${cleanedReason || "(none given)"}`,
-      newStatus: "DROPPED",
-    },
-  });
-
+  // Capture an audit trail before deletion (so we keep a record even though
+  // the row itself is gone). `before` snapshots everything we had on the task.
   await writeAudit({
     actorId: userId,
-    action: "task.drop",
+    action: "task.delete",
     entity: "Task",
     entityId: taskId,
     before: task,
-    after: updated,
+    after: null,
     note: cleanedReason || null,
   });
 
-  revalidatePath(`/sm/tasks/${taskId}`);
+  // Detach interventions / appointments that reference this task before
+  // deleting — those FKs are not declared `onDelete: Cascade` in the schema,
+  // and we don't want to accidentally lose escalation history.
+  await prisma.$transaction([
+    prisma.intervention.updateMany({ where: { taskId }, data: { taskId: null } }),
+    prisma.appointment.updateMany({ where: { taskId }, data: { taskId: null } }),
+    // TaskUpdate is set to onDelete: Cascade in the schema, so it's removed
+    // automatically when the parent task goes.
+    prisma.task.delete({ where: { id: taskId } }),
+  ]);
+
   revalidatePath("/sm/tasks");
-  revalidatePath("/sm/dropped");
+  revalidatePath("/sm");
   revalidatePath("/cbo");
-}
-
-// ────────── RESTORE (within 30 days) ──────────
-export async function restoreTaskAction(taskId: string) {
-  const userId = await ensureSm();
-  const task = await prisma.task.findUnique({ where: { id: taskId } });
-  if (!task) throw new Error("Task not found");
-  if (task.status !== "DROPPED" || !task.droppedAt) throw new Error("Task is not dropped");
-
-  const ageMs = Date.now() - task.droppedAt.getTime();
-  const days = Math.floor(ageMs / (1000 * 60 * 60 * 24));
-  if (days > 30) throw new Error("Restore window expired (> 30 days). Duplicate it instead.");
-
-  await prisma.task.update({
-    where: { id: taskId },
-    data: { status: "NOT_STARTED", droppedAt: null, lastUpdateAt: new Date() },
-  });
-  await prisma.taskUpdate.create({
-    data: {
-      taskId,
-      authorId: userId,
-      note: "♻️ Restored from Dropped Archive.",
-      newStatus: "NOT_STARTED",
-    },
-  });
-  revalidatePath(`/sm/tasks/${taskId}`);
-  revalidatePath("/sm/dropped");
-  revalidatePath("/sm/tasks");
 }
 
 // ────────── DUPLICATE ──────────
@@ -398,7 +362,11 @@ export async function bulkUpdateAction(
   const session = await auth();
 
   if (patch.action === "drop") {
-    // Block drop on any task with open escalation (unless super admin)
+    // The "drop" action now performs a hard delete — the Dropped Archive has
+    // been retired. We keep the action name "drop" for backwards-compat with
+    // existing callers (BulkTaskList) but the effect is permanent removal.
+
+    // Block delete on any task with open escalation (unless super admin)
     if (!canConfigureSystem(session?.user.systemRole)) {
       const blocked = await prisma.task.count({
         where: { id: { in: ids }, interventions: { some: { resolved: false } } },
@@ -406,36 +374,26 @@ export async function bulkUpdateAction(
       if (blocked > 0) throw new Error(`${blocked} of the selected tasks have open escalations. Resolve them first.`);
     }
 
-    const reasonRequired = await isEnabled("drop_reason");
     const cleanedReason = (patch.reason || "").trim();
-    if (reasonRequired && cleanedReason.length === 0) {
-      throw new Error("A reason is required to drop tasks. Please describe why.");
-    }
 
-    const updateData: { status: "DROPPED"; droppedAt: Date; dropReason?: string | null } = {
-      status: "DROPPED",
-      droppedAt: new Date(),
-    };
-    if (reasonRequired) updateData.dropReason = cleanedReason || null;
-
-    await prisma.task.updateMany({ where: { id: { in: ids } }, data: updateData });
-    await prisma.taskUpdate.createMany({
-      data: ids.map((id) => ({
-        taskId: id,
-        authorId: userId,
-        note: cleanedReason ? `🗑️ Bulk dropped — Reason: ${cleanedReason}` : "🗑️ Bulk dropped.",
-        newStatus: "DROPPED" as TaskStatus,
-      })),
-    });
+    // Snapshot for the audit trail before we remove the rows.
+    const snapshot = await prisma.task.findMany({ where: { id: { in: ids } } });
 
     await writeAudit({
       actorId: userId,
-      action: "task.bulk_drop",
+      action: "task.bulk_delete",
       entity: "Task",
       entityId: null,
+      before: snapshot,
       after: { ids, count: ids.length, reason: cleanedReason || null },
-      note: `Bulk dropped ${ids.length} task(s)`,
+      note: `Bulk deleted ${ids.length} task(s)`,
     });
+
+    await prisma.$transaction([
+      prisma.intervention.updateMany({ where: { taskId: { in: ids } }, data: { taskId: null } }),
+      prisma.appointment.updateMany({ where: { taskId: { in: ids } }, data: { taskId: null } }),
+      prisma.task.deleteMany({ where: { id: { in: ids } } }),
+    ]);
   } else {
     const data: { status?: TaskStatus; ownerRoleId?: string | null; lastUpdateAt: Date } = { lastUpdateAt: new Date() };
     if (patch.status) data.status = patch.status;

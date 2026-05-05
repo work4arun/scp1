@@ -77,16 +77,16 @@ export function BulkTaskList({
     let reason = "";
     if (dropReasonEnabled) {
       const entered = window.prompt(
-        `Drop ${selected.size} task(s)? Please describe why — this will be recorded for the audit trail.`,
+        `Permanently delete ${selected.size} task(s)? Please describe why — this will be recorded for the audit trail. This cannot be undone.`,
         "",
       );
       if (entered === null) return; // cancelled
       reason = entered.trim();
       if (!reason) {
-        alert("A reason is required to drop tasks.");
+        alert("A reason is required to delete tasks.");
         return;
       }
-    } else if (!confirm(`Drop ${selected.size} task(s)? They can be restored within 30 days.`)) {
+    } else if (!confirm(`Permanently delete ${selected.size} task(s)? This cannot be undone.`)) {
       return;
     }
     startTransition(async () => {
@@ -199,7 +199,7 @@ export function BulkTaskList({
                 </Select>
                 <Button size="sm" variant="outline" disabled={pending || !bulkOwner} onClick={applyOwner}>Apply</Button>
                 <Button size="sm" variant="destructive" disabled={pending} onClick={applyDrop}>
-                  <Trash2 className="h-4 w-4" /> Drop
+                  <Trash2 className="h-4 w-4" /> Delete
                 </Button>
               </div>
             </div>

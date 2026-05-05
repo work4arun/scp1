@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Archive, Download } from "lucide-react";
+import { Plus, Download } from "lucide-react";
 import { BulkTaskList } from "./bulk-list";
 import type { TaskStatus, Prisma } from "@prisma/client";
 import { isEnabled } from "@/lib/features";
@@ -22,7 +22,8 @@ export default async function SmTasks({
   const session = await auth();
   if (!canManageTasks(session?.user.systemRole)) redirect("/");
 
-  const where: Prisma.TaskWhereInput = { status: { not: "DROPPED" } };
+  // Tasks are hard-deleted now — no need to filter out a "DROPPED" archive.
+  const where: Prisma.TaskWhereInput = {};
   if (searchParams.vertical) where.vertical = { code: searchParams.vertical };
   if (searchParams.priority) where.priority = { code: searchParams.priority };
   if (searchParams.status) where.status = searchParams.status as TaskStatus;
@@ -43,7 +44,7 @@ export default async function SmTasks({
   const skip = paginationEnabled ? (pageNumber - 1) * PAGE_SIZE : 0;
   const take = paginationEnabled ? PAGE_SIZE : 200;
 
-  const [tasks, totalActive, verticals, priorities, ownerRoles, droppedCount] = await Promise.all([
+  const [tasks, totalActive, verticals, priorities, ownerRoles] = await Promise.all([
     prisma.task.findMany({
       where,
       orderBy: [{ priority: { rank: "asc" } }, { updatedAt: "desc" }],
@@ -55,7 +56,6 @@ export default async function SmTasks({
     prisma.vertical.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
     prisma.priority.findMany({ where: { active: true }, orderBy: { rank: "asc" } }),
     prisma.ownerRole.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
-    prisma.task.count({ where: { status: "DROPPED" } }),
   ]);
 
   const totalPages = paginationEnabled ? Math.max(1, Math.ceil(totalActive / PAGE_SIZE)) : 1;
@@ -96,11 +96,6 @@ export default async function SmTasks({
                 <Link href={`/api/export/tasks${baseQs ? `?${baseQs}` : ""}`}>
                   <Download className="h-4 w-4" /> Export CSV
                 </Link>
-              </Button>
-            )}
-            {droppedCount > 0 && (
-              <Button asChild variant="outline" size="sm">
-                <Link href="/sm/dropped"><Archive className="h-4 w-4" /> Dropped ({droppedCount})</Link>
               </Button>
             )}
             <Button asChild size="lg">

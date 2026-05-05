@@ -69,7 +69,6 @@ function navItemsFor(role: SystemRole): NavItem[] {
     { href: "/sm/notes", label: "Notes from CBO", icon: StickyNote },
     { href: "/calendar", label: "Calendar", icon: Calendar },
     { href: "/sm/parking", label: "Parking Lot", icon: Archive },
-    { href: "/sm/dropped", label: "Dropped Archive", icon: Archive },
   ];
 }
 
