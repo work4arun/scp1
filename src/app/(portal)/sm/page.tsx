@@ -3,12 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { canManageTasks } from "@/lib/rbac";
-import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge, PriorityBadge } from "@/components/status-badges";
 import { formatRelative } from "@/lib/utils";
 import { Plus, AlertTriangle, ListChecks, Inbox, Clock } from "lucide-react";
+import type { Prisma } from "@prisma/client";
 
 export default async function SmHome() {
   const session = await auth();
@@ -24,7 +24,10 @@ export default async function SmHome() {
   //   • it is due today (deadline within today)
   //   • it was created today
   //   • it has had a status update today (lastUpdateAt within today)
-  const todayFilter = {
+  // Legacy soft-deleted ("DROPPED") rows are excluded — that archive has
+  // been retired but old rows may still linger in the database.
+  const todayFilter: Prisma.TaskWhereInput = {
+    status: { not: "DROPPED" },
     OR: [
       { deadline: { gte: startOfDay, lt: endOfDay } },
       { createdAt: { gte: startOfDay, lt: endOfDay } },
@@ -58,23 +61,25 @@ export default async function SmHome() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Today's date — front-and-centre */}
-      <div className="rounded-lg border border-border bg-card px-4 py-3">
-        <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-          Today
+      {/* Page header — today's date is THE heading so it's unmissable */}
+      <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+            Today
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{todayLabel}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {todaysTasks.length === 0
+              ? "No tasks scheduled, created, or updated today."
+              : `${todaysTasks.length} task${todaysTasks.length === 1 ? "" : "s"} for today.`}
+          </p>
         </div>
-        <div className="text-lg font-semibold">{todayLabel}</div>
-      </div>
-
-      <PageHeader
-        title="Today"
-        description="Your daily control surface — capture, follow-up, escalate."
-        action={
+        <div className="shrink-0">
           <Button asChild size="lg">
             <Link href="/sm/new-task"><Plus className="h-4 w-4" /> New task</Link>
           </Button>
-        }
-      />
+        </div>
+      </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <KpiTile icon={<ListChecks className="h-4 w-4" />} label="P1 today" value={p1Today} href="/sm/tasks?priority=P1" />

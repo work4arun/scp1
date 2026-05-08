@@ -35,8 +35,12 @@ export function TaskActions({
         variant="outline"
         disabled={pending}
         onClick={() => startTransition(async () => {
-          const newId = await duplicateTaskAction(taskId);
-          router.push(`/sm/tasks/${newId}`);
+          try {
+            const newId = await duplicateTaskAction(taskId);
+            router.push(`/sm/tasks/${newId}`);
+          } catch (e) {
+            alert((e as Error).message || "Could not duplicate task.");
+          }
         })}
       >
         <Copy className="h-4 w-4" /> Duplicate

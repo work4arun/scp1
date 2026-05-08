@@ -58,18 +58,26 @@ export function BulkTaskList({
   async function applyStatus() {
     if (!bulkStatus || selected.size === 0) return;
     startTransition(async () => {
-      await bulkUpdateAction(Array.from(selected), { status: bulkStatus as TaskStatus });
-      setSelected(new Set()); setBulkStatus("");
-      router.refresh();
+      try {
+        await bulkUpdateAction(Array.from(selected), { status: bulkStatus as TaskStatus });
+        setSelected(new Set()); setBulkStatus("");
+        router.refresh();
+      } catch (e) {
+        alert((e as Error).message || "Could not update status.");
+      }
     });
   }
   async function applyOwner() {
     if (selected.size === 0 || !bulkOwner) return;
     const ownerRoleId = bulkOwner === "__unassign__" ? null : bulkOwner;
     startTransition(async () => {
-      await bulkUpdateAction(Array.from(selected), { ownerRoleId });
-      setSelected(new Set()); setBulkOwner("");
-      router.refresh();
+      try {
+        await bulkUpdateAction(Array.from(selected), { ownerRoleId });
+        setSelected(new Set()); setBulkOwner("");
+        router.refresh();
+      } catch (e) {
+        alert((e as Error).message || "Could not reassign owner.");
+      }
     });
   }
   async function applyDrop() {

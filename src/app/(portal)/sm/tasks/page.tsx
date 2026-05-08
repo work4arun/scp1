@@ -22,8 +22,9 @@ export default async function SmTasks({
   const session = await auth();
   if (!canManageTasks(session?.user.systemRole)) redirect("/");
 
-  // Tasks are hard-deleted now — no need to filter out a "DROPPED" archive.
-  const where: Prisma.TaskWhereInput = {};
+  // Tasks are hard-deleted now, but rows soft-deleted under the old "Dropped"
+  // flow may still exist in the database. Hide them from the active register.
+  const where: Prisma.TaskWhereInput = { status: { not: "DROPPED" } };
   if (searchParams.vertical) where.vertical = { code: searchParams.vertical };
   if (searchParams.priority) where.priority = { code: searchParams.priority };
   if (searchParams.status) where.status = searchParams.status as TaskStatus;
