@@ -29,6 +29,12 @@ export function TaskActions({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [confirmCode, setConfirmCode] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Trim BOTH sides — code from DB can have legacy trailing whitespace
+  // (CSV imports, migrations) which would leave the Delete button silently
+  // disabled with no feedback.
+  const codeNormalized = code.trim();
+  const confirmMatches = confirmCode.trim() === codeNormalized;
 
   return (
     <div className="flex flex-wrap gap-2">
@@ -41,10 +47,14 @@ export function TaskActions({
         disabled={pending}
         onClick={() => startTransition(async () => {
           try {
-            const newId = await duplicateTaskAction(taskId);
-            router.push(`/sm/tasks/${newId}`);
+            const result = await duplicateTaskAction(taskId);
+            if (!result.success) {
+              alert(result.error);
+              return;
+            }
+            router.push(`/sm/tasks/${result.id}`);
           } catch (e) {
-            alert((e as Error).message || "Could not duplicate task.");
+            alert((e as Error)?.message || "Could not duplicate task. Please refresh and try again.");
           }
         })}
       >
@@ -77,14 +87,25 @@ export function TaskActions({
               </div>
             ) : null}
 
+            {deleteError ? (
+              <div className="rounded-md bg-destructive/10 text-destructive px-3 py-2 text-xs font-medium mb-3 whitespace-pre-wrap">
+                {deleteError}
+              </div>
+            ) : null}
+
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <Label htmlFor="reason">Reason for deletion <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
                 <Textarea id="reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Duplicated by another task / no longer relevant" />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="confirmCode">Type <code className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-mono">{code}</code> to confirm</Label>
-                <Input id="confirmCode" value={confirmCode} onChange={(e) => setConfirmCode(e.target.value)} placeholder={code} />
+                <Label htmlFor="confirmCode">Type <code className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-mono">{codeNormalized}</code> to confirm</Label>
+                <Input
+                  id="confirmCode"
+                  value={confirmCode}
+                  onChange={(e) => { setConfirmCode(e.target.value); setDeleteError(null); }}
+                  placeholder={codeNormalized}
+                />
               </div>
             </div>
 
@@ -92,15 +113,20 @@ export function TaskActions({
               <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={pending}>Cancel</Button>
               <Button
                 variant="destructive"
-                disabled={pending || blockDelete || confirmCode.trim() !== code}
+                disabled={pending || blockDelete || !confirmMatches}
                 onClick={() => startTransition(async () => {
+                  setDeleteError(null);
                   try {
-                    await softDeleteTaskAction(taskId, reason.trim());
+                    const result = await softDeleteTaskAction(taskId, reason.trim());
+                    if (!result.success) {
+                      setDeleteError(result.error);
+                      return;
+                    }
                     setDeleteOpen(false);
                     router.push("/sm/tasks");
                     router.refresh();
                   } catch (e) {
-                    alert((e as Error).message);
+                    setDeleteError((e as Error)?.message || "An unexpected error occurred. Please refresh and try again.");
                   }
                 })}
               >

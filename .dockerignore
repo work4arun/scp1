@@ -4,7 +4,7 @@
 #  Without this file the build context can balloon by ~1 GB+:
 #    node_modules (~800 MB), .next (~230 MB), .git (~80 MB), tsbuildinfo (~115 KB)
 #  That bloats the layer cache and can cause `ENOSPC: no space left on device`
-#  on disk-constrained hosts. Keep this file in sync with the project-root one.
+#  on disk-constrained hosts. Keep this file in sync with the one in scp-deploy/.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Dependencies — installed fresh inside the image
@@ -52,11 +52,10 @@ README.md
 DEPLOYMENT.md
 DEPLOYMENT_GUIDE.md
 DIAGNOSIS_REPORT.md
-DEPLOY.md
 *.md
 !prisma/**/*.md
 
-# Tests and CI metadata
+# Tests and CI metadata (none today, but future-proofing)
 .github
 .circleci
 .gitlab-ci.yml

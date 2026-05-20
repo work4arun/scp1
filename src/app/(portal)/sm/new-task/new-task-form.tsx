@@ -48,8 +48,16 @@ export function NewTaskForm({
           return;
         }
         router.push(`/sm/tasks/${result.id}`);
-      } catch {
-        setError("An unexpected error occurred. Please try again.");
+      } catch (err) {
+        // Surface the actual message (even truncated) instead of a generic
+        // "An unexpected error occurred." — that was hiding real errors from
+        // the deployed server and making it impossible to diagnose.
+        const msg = (err as Error)?.message;
+        setError(
+          msg && !msg.toLowerCase().includes("digest")
+            ? msg
+            : "Could not reach the server. Please refresh and try again.",
+        );
       }
     });
   }

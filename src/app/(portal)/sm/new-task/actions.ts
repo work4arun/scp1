@@ -9,6 +9,7 @@ import { sendTaskEmailToOwners } from "@/lib/email";
 import type { TaskSource, InterventionFlag } from "@prisma/client";
 import { computeSlaDueAt } from "@/lib/sla";
 import { writeAudit } from "@/lib/audit";
+import { friendlyPrismaError } from "@/lib/prisma-errors";
 
 export type CreateTaskResult =
   | { success: true; id: string }
@@ -17,7 +18,12 @@ export type CreateTaskResult =
 export async function createTaskAction(formData: FormData): Promise<CreateTaskResult> {
   const session = await auth();
   if (!canManageTasks(session?.user.systemRole) || !session?.user.id) {
-    throw new Error("Forbidden");
+    // Return — do NOT throw. Thrown server-action errors become opaque
+    // `digest:` blobs in production and the user sees nothing useful.
+    return {
+      success: false,
+      error: "Your session is no longer valid or you don't have permission to add tasks. Please sign in again.",
+    };
   }
 
   const verticalId   = String(formData.get("verticalId") || "").trim();
@@ -93,7 +99,9 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
   // Correct approach:
   //   1. Take a Postgres advisory transaction lock keyed on verticalId so
   //      concurrent creates against the same vertical serialize. Different
-  //      verticals do not block each other.
+  //      verticals do not block each other. We cast hashtext()'s int4 result
+  //      to bigint explicitly so PgBouncer / RDS Proxy don't mis-resolve the
+  //      overload as the (int, int) form.
   //   2. Compute the next sequence by parsing the numeric suffix of the
   //      maximum existing code for this vertical (including dropped rows,
   //      so we never recycle a code).
@@ -106,7 +114,7 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
     try {
       created = await prisma.$transaction(async (tx) => {
         // 1) Per-vertical advisory lock — released automatically on tx commit/rollback.
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${verticalId}))`;
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${verticalId})::bigint)`;
 
         // 2) Next number = MAX(numeric suffix of existing codes for this vertical) + 1.
         //    SUBSTRING ... '\d+$' extracts the trailing number of e.g. "MKT-007" -> "7".
@@ -155,7 +163,13 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
       ) {
         continue;
       }
-      throw err;
+      // Any other Prisma/DB error: convert to a returned result so the user
+      // sees the actual problem instead of an opaque "An unexpected error".
+      console.error("[createTaskAction] DB error", err);
+      return {
+        success: false,
+        error: friendlyPrismaError(err) ?? "Could not create the task because of a database error. Please contact support.",
+      };
     }
   }
   if (!created) {

@@ -2,6 +2,15 @@
 # ---- Strategic Control Portal (SCP) production image ----
 # Multi-stage build: deps -> builder -> runner.
 # Result: a small image that runs `npm start` on port 3000.
+#
+# Optimisations applied to keep the build off disk-constrained hosts (ENOSPC):
+#   • BuildKit cache mount for /root/.npm so installs reuse the host npm cache
+#   • `npm ci --prefer-offline --no-audit --no-fund` to avoid network/metadata churn
+#   • `npm cache clean --force` after install — drops ~hundreds of MB of tarballs
+#
+# Note: we keep devDependencies (prisma CLI, tsx) in the final image because the
+# entrypoint runs `prisma migrate deploy` and optionally `npm run db:seed` at
+# container start. Pruning them would break startup.
 
 # ---------- 1) deps ----------
 FROM node:20-alpine AS deps
@@ -10,8 +19,14 @@ RUN apk add --no-cache libc6-compat openssl
 # Copy only what's needed to install
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
-# Install ALL deps (dev included) — needed for `next build` and `prisma db seed`
-RUN npm ci
+# Install ALL deps (dev included) — needed for `next build` and `prisma db seed`.
+# `--mount=type=cache` reuses the npm cache layer across builds, drastically
+# reducing repeated downloads. `npm cache clean --force` at the end frees the
+# extracted tarballs from the layer itself (the cache mount is not part of the
+# final image).
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --prefer-offline --no-audit --no-fund \
+ && npm cache clean --force
 
 # ---------- 2) builder ----------
 FROM node:20-alpine AS builder
@@ -24,6 +39,8 @@ RUN mkdir -p public
 # Generate Prisma client + build Next.js
 RUN npx prisma generate
 RUN npm run build
+# Drop npm's tarball cache — we won't be installing more packages in the runner.
+RUN npm cache clean --force
 
 # ---------- 3) runner ----------
 FROM node:20-alpine AS runner

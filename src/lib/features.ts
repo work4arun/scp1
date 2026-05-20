@@ -224,12 +224,23 @@ const loadFlags = cache(async (): Promise<Record<string, boolean>> => {
 /**
  * Returns true iff the named flag is enabled in the database AND the master
  * kill-switch is ON. Use this in server components and server actions.
+ *
+ * When a flag row is missing entirely (fresh DB, seeder skipped) we fall back
+ * to the registry's `defaultEnabled` instead of treating the flag as off.
+ * Without this fallback the kill-switch (`feature_flags_enforced`) was being
+ * read as `false` on every fresh deployment, which disabled every other flag
+ * including features required for basic operation.
  */
 export async function isEnabled(key: FlagKey): Promise<boolean> {
   const flags = await loadFlags();
-  if (!flags["feature_flags_enforced"]) return false;
+  const def = REGISTRY_BY_KEY[key];
+  const resolve = (k: FlagKey) => {
+    if (k in flags) return Boolean(flags[k]);
+    return Boolean(REGISTRY_BY_KEY[k]?.defaultEnabled);
+  };
+  if (!resolve("feature_flags_enforced")) return false;
   if (key === "feature_flags_enforced") return true;
-  return Boolean(flags[key]);
+  return def ? resolve(key) : false;
 }
 
 /**
@@ -247,13 +258,18 @@ export async function requireFeature(key: FlagKey): Promise<void> {
 /**
  * Returns the full flag map for a request. Use in layout / shell components
  * that need to branch on multiple flags at once.
+ *
+ * As with `isEnabled`, missing rows fall back to the registry's defaults so
+ * a never-seeded prod DB doesn't kill every gated feature.
  */
 export async function loadAllFlags(): Promise<Record<FlagKey, boolean>> {
   const flags = await loadFlags();
-  const enforced = flags["feature_flags_enforced"] !== false;
+  const resolve = (key: FlagKey) =>
+    key in flags ? Boolean(flags[key]) : Boolean(REGISTRY_BY_KEY[key]?.defaultEnabled);
+  const enforced = resolve("feature_flags_enforced");
   const out = {} as Record<FlagKey, boolean>;
   for (const def of FLAG_REGISTRY) {
-    out[def.key] = enforced && (def.key === "feature_flags_enforced" ? true : Boolean(flags[def.key]));
+    out[def.key] = enforced && (def.key === "feature_flags_enforced" ? true : resolve(def.key));
   }
   return out;
 }

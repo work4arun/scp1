@@ -4,12 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { canManageTasks, canConfigureSystem } from "@/lib/rbac";
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import type { TaskSource, InterventionFlag, TaskStatus } from "@prisma/client";
 import { sendTaskEmailToOwners } from "@/lib/email";
 import { notifyAllCBO } from "@/lib/notify";
 import { writeAudit } from "@/lib/audit";
 import { isEnabled } from "@/lib/features";
+import { friendlyPrismaError } from "@/lib/prisma-errors";
 
 const HUMAN_FIELD: Record<string, string> = {
   title: "Title",
@@ -30,18 +30,29 @@ const HUMAN_FIELD: Record<string, string> = {
   status: "Status",
 };
 
-export type UpdateTaskResult = { success: false; error: string } | { success: true };
+export type UpdateTaskResult = { success: false; error: string } | { success: true; redirectTo?: string };
+export type DeleteTaskResult = { success: false; error: string } | { success: true };
+export type DuplicateTaskResult = { success: false; error: string } | { success: true; id: string };
+export type BulkUpdateResult = { success: false; error: string } | { success: true; count: number };
 
-async function ensureSm() {
+const FORBIDDEN_MSG =
+  "Your session is no longer valid or you don't have permission for this action. Please sign in again.";
+
+type Authed = { ok: true; userId: string } | { ok: false; error: string };
+async function checkSm(): Promise<Authed> {
   const session = await auth();
-  if (!canManageTasks(session?.user.systemRole) || !session?.user.id) throw new Error("Forbidden");
-  return session.user.id;
+  if (!canManageTasks(session?.user.systemRole) || !session?.user.id) {
+    return { ok: false, error: FORBIDDEN_MSG };
+  }
+  return { ok: true, userId: session.user.id };
 }
 
 // ────────── EDIT ──────────
 export async function updateTaskAction(taskId: string, formData: FormData): Promise<UpdateTaskResult> {
   const session = await auth();
-  const userId = await ensureSm();
+  const authed = await checkSm();
+  if (!authed.ok) return { success: false, error: authed.error };
+  const userId = authed.userId;
 
   const existing = await prisma.task.findUnique({
     where: { id: taskId },
@@ -54,7 +65,7 @@ export async function updateTaskAction(taskId: string, formData: FormData): Prom
       subOwner: true,
     },
   });
-  if (!existing) throw new Error("Task not found");
+  if (!existing) return { success: false, error: "Task not found — it may have been deleted by someone else." };
 
   // ── Resolve owner by email ──
   const ownerEmailInput = ((formData.get("ownerEmail") as string) || "").trim().toLowerCase();
@@ -138,17 +149,25 @@ export async function updateTaskAction(taskId: string, formData: FormData): Prom
   const labels = await resolveLabels(patch, existing);
   const diffs = buildDiff(existing, patch, labels);
 
-  await prisma.task.update({ where: { id: taskId }, data: patch });
+  try {
+    await prisma.task.update({ where: { id: taskId }, data: patch });
 
-  if (diffs.length > 0) {
-    await prisma.taskUpdate.create({
-      data: {
-        taskId,
-        authorId: userId,
-        note: `📝 Edit:\n${diffs.join("\n")}`,
-        newStatus: patch.status !== existing.status ? patch.status : null,
-      },
-    });
+    if (diffs.length > 0) {
+      await prisma.taskUpdate.create({
+        data: {
+          taskId,
+          authorId: userId,
+          note: `📝 Edit:\n${diffs.join("\n")}`,
+          newStatus: patch.status !== existing.status ? patch.status : null,
+        },
+      });
+    }
+  } catch (err) {
+    console.error("[updateTaskAction] DB error", err);
+    return {
+      success: false,
+      error: friendlyPrismaError(err) ?? "Could not save the task. Please refresh and try again.",
+    };
   }
 
   revalidatePath(`/sm/tasks/${taskId}`);
@@ -249,31 +268,50 @@ export async function updateTaskAction(taskId: string, formData: FormData): Prom
     senderId: userId,
   });
 
-  redirect(`/sm/tasks/${taskId}`);
+  // Tell the client where to go — DO NOT call redirect() here. redirect()
+  // throws NEXT_REDIRECT which is then caught by the client's try/catch and
+  // misinterpreted as a failure. The edit form navigates on success itself.
+  return { success: true, redirectTo: `/sm/tasks/${taskId}` };
 }
 
 // ────────── HARD DELETE ──────────
 // Tasks deleted from the SM portal are permanently removed — there is no
 // soft-delete archive any more. The `Dropped` archive feature has been retired.
-export async function softDeleteTaskAction(taskId: string, reason: string) {
-  const userId = await ensureSm();
+//
+// Returns a result object; never throws. Throwing from a server action causes
+// the production-build client to receive an opaque `digest:` blob instead of
+// the actual message, which is exactly the "button does nothing / red blob"
+// failure mode the user was hitting.
+export async function softDeleteTaskAction(
+  taskId: string,
+  reason: string,
+): Promise<DeleteTaskResult> {
+  const authed = await checkSm();
+  if (!authed.ok) return { success: false, error: authed.error };
+  const userId = authed.userId;
   const session = await auth();
 
   const task = await prisma.task.findUnique({
     where: { id: taskId },
     include: { interventions: { where: { resolved: false } } },
   });
-  if (!task) throw new Error("Task not found");
+  if (!task) {
+    return { success: false, error: "Task not found — it may have already been deleted. Please refresh the list." };
+  }
 
   // Block delete if there's an open escalation — unless Super Admin
   if (task.interventions.length > 0 && !canConfigureSystem(session?.user.systemRole)) {
-    throw new Error("This task has an open escalation to Dr. BN. Resolve the intervention first, or ask Super Admin to delete.");
+    return {
+      success: false,
+      error: "This task has an open escalation to Dr. BN. Resolve the intervention first, or ask Super Admin to delete.",
+    };
   }
 
   const cleanedReason = (reason || "").trim();
 
   // Capture an audit trail before deletion (so we keep a record even though
   // the row itself is gone). `before` snapshots everything we had on the task.
+  // writeAudit is fire-and-forget — never throws.
   await writeAudit({
     actorId: userId,
     action: "task.delete",
@@ -287,143 +325,205 @@ export async function softDeleteTaskAction(taskId: string, reason: string) {
   // Detach interventions / appointments that reference this task before
   // deleting — those FKs are not declared `onDelete: Cascade` in the schema,
   // and we don't want to accidentally lose escalation history.
-  await prisma.$transaction([
-    prisma.intervention.updateMany({ where: { taskId }, data: { taskId: null } }),
-    prisma.appointment.updateMany({ where: { taskId }, data: { taskId: null } }),
-    // TaskUpdate is set to onDelete: Cascade in the schema, so it's removed
-    // automatically when the parent task goes.
-    prisma.task.delete({ where: { id: taskId } }),
-  ]);
+  try {
+    await prisma.$transaction([
+      prisma.intervention.updateMany({ where: { taskId }, data: { taskId: null } }),
+      prisma.appointment.updateMany({ where: { taskId }, data: { taskId: null } }),
+      // TaskUpdate is set to onDelete: Cascade in the schema, so it's removed
+      // automatically when the parent task goes.
+      prisma.task.delete({ where: { id: taskId } }),
+    ]);
+  } catch (err) {
+    console.error("[softDeleteTaskAction] DB error", err);
+    return {
+      success: false,
+      error: friendlyPrismaError(err) ?? "Could not delete this task due to a database error.",
+    };
+  }
 
   revalidatePath("/sm/tasks");
   revalidatePath("/sm");
   revalidatePath("/cbo");
+  return { success: true };
 }
 
 // ────────── DUPLICATE ──────────
-export async function duplicateTaskAction(taskId: string): Promise<string> {
-  const userId = await ensureSm();
+// Uses the same advisory-lock + MAX(suffix) algorithm as createTaskAction.
+// The previous `count() + 1` approach generated P2002 unique-constraint errors
+// whenever any task code in the vertical had been hard-deleted (count would
+// be 5 even though MKT-006 already existed).
+export async function duplicateTaskAction(taskId: string): Promise<DuplicateTaskResult> {
+  const authed = await checkSm();
+  if (!authed.ok) return { success: false, error: authed.error };
+  const userId = authed.userId;
+
   const original = await prisma.task.findUnique({ where: { id: taskId } });
-  if (!original) throw new Error("Task not found");
+  if (!original) return { success: false, error: "Original task not found — please refresh." };
 
   const vertical = await prisma.vertical.findUnique({ where: { id: original.verticalId } });
-  if (!vertical) throw new Error("Vertical not found");
+  if (!vertical) return { success: false, error: "Vertical not found — please refresh." };
 
-  // Wrap count + create in a transaction to prevent duplicate codes under concurrent requests
-  const created = await prisma.$transaction(async (tx) => {
-    const count = await tx.task.count({ where: { verticalId: vertical.id } });
-    const newCode = `${vertical.code}-${String(count + 1).padStart(3, "0")}`;
-    return tx.task.create({
-      data: {
-        code: newCode,
-        title: `${original.title} (copy)`,
-        description: original.description,
-        verticalId: original.verticalId,
-        subVerticalId: original.subVerticalId,
-        priorityId: original.priorityId,
-        ownerRoleId: original.ownerRoleId,
-        ownerUserId: original.ownerUserId,
-        subOwnerId: original.subOwnerId,
-        createdById: userId,
-        deadline: null,
-        frequency: original.frequency,
-        source: original.source,
-        supportNeeded: original.supportNeeded,
-        nextAction: original.nextAction,
-        intervention: "NO",
-        expectedOutput: original.expectedOutput,
-        status: "NOT_STARTED",
-        lastUpdateAt: new Date(),
-      },
+  const MAX_ATTEMPTS = 3;
+  let created: { id: string } | null = null;
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    try {
+      created = await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${vertical.id})::bigint)`;
+        const rows = await tx.$queryRaw<{ next: bigint | number | null }[]>`
+          SELECT COALESCE(MAX(CAST(SUBSTRING("code" FROM '\d+$') AS INTEGER)), 0) + 1 AS next
+          FROM "Task" WHERE "verticalId" = ${vertical.id}
+        `;
+        const nextNum = rows[0]?.next ? Number(rows[0].next) : 1;
+        const newCode = `${vertical.code}-${String(nextNum).padStart(3, "0")}`;
+        return tx.task.create({
+          data: {
+            code: newCode,
+            title: `${original.title} (copy)`,
+            description: original.description,
+            verticalId: original.verticalId,
+            subVerticalId: original.subVerticalId,
+            priorityId: original.priorityId,
+            ownerRoleId: original.ownerRoleId,
+            ownerUserId: original.ownerUserId,
+            subOwnerId: original.subOwnerId,
+            createdById: userId,
+            deadline: null,
+            frequency: original.frequency,
+            source: original.source,
+            supportNeeded: original.supportNeeded,
+            nextAction: original.nextAction,
+            intervention: "NO",
+            expectedOutput: original.expectedOutput,
+            status: "NOT_STARTED",
+            lastUpdateAt: new Date(),
+          },
+        });
+      });
+      lastErr = null;
+      break;
+    } catch (err: unknown) {
+      lastErr = err;
+      if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "P2002") {
+        continue;
+      }
+      console.error("[duplicateTaskAction] DB error", err);
+      return { success: false, error: friendlyPrismaError(err) ?? "Could not duplicate the task." };
+    }
+  }
+  if (!created) {
+    console.error("[duplicateTaskAction] exhausted retries", lastErr);
+    return { success: false, error: "Could not generate a unique code for the copy. Please try again." };
+  }
+
+  try {
+    await prisma.taskUpdate.create({
+      data: { taskId: created.id, authorId: userId, note: `📑 Duplicated from ${original.code}.` },
     });
-  });
-
-  await prisma.taskUpdate.create({
-    data: { taskId: created.id, authorId: userId, note: `📑 Duplicated from ${original.code}.` },
-  });
+  } catch (err) {
+    // Non-fatal — the task was created successfully; the audit trail entry
+    // is best-effort. Log and continue.
+    console.error("[duplicateTaskAction] could not write update note", err);
+  }
 
   revalidatePath("/sm/tasks");
-  return created.id;
+  return { success: true, id: created.id };
 }
 
 // ────────── BULK ACTIONS ──────────
 export async function bulkUpdateAction(
   ids: string[],
   patch: { status?: TaskStatus; ownerRoleId?: string | null; action?: "drop"; reason?: string }
-) {
-  const userId = await ensureSm();
-  if (ids.length === 0) return;
+): Promise<BulkUpdateResult> {
+  const authed = await checkSm();
+  if (!authed.ok) return { success: false, error: authed.error };
+  const userId = authed.userId;
+
+  if (ids.length === 0) return { success: true, count: 0 };
   // Bulk endpoint is feature-flagged. When task_bulk_actions is OFF the
   // toolbar is hidden and we additionally refuse the action server-side so
   // the API surface stays consistent.
   if (!(await isEnabled("task_bulk_actions"))) {
-    throw new Error("Bulk actions are disabled. Enable the feature flag at /admin/features.");
+    return {
+      success: false,
+      error: "Bulk actions are disabled. Ask a Super Admin to enable the 'task_bulk_actions' flag at /admin/features.",
+    };
   }
   const session = await auth();
 
-  if (patch.action === "drop") {
-    // The "drop" action now performs a hard delete — the Dropped Archive has
-    // been retired. We keep the action name "drop" for backwards-compat with
-    // existing callers (BulkTaskList) but the effect is permanent removal.
+  try {
+    if (patch.action === "drop") {
+      // Block delete on any task with open escalation (unless super admin)
+      if (!canConfigureSystem(session?.user.systemRole)) {
+        const blocked = await prisma.task.count({
+          where: { id: { in: ids }, interventions: { some: { resolved: false } } },
+        });
+        if (blocked > 0) {
+          return {
+            success: false,
+            error: `${blocked} of the selected tasks have open escalations. Resolve them first or ask Super Admin to delete.`,
+          };
+        }
+      }
 
-    // Block delete on any task with open escalation (unless super admin)
-    if (!canConfigureSystem(session?.user.systemRole)) {
-      const blocked = await prisma.task.count({
-        where: { id: { in: ids }, interventions: { some: { resolved: false } } },
+      const cleanedReason = (patch.reason || "").trim();
+
+      // Snapshot for the audit trail before we remove the rows.
+      const snapshot = await prisma.task.findMany({ where: { id: { in: ids } } });
+
+      await writeAudit({
+        actorId: userId,
+        action: "task.bulk_delete",
+        entity: "Task",
+        entityId: null,
+        before: snapshot,
+        after: { ids, count: ids.length, reason: cleanedReason || null },
+        note: `Bulk deleted ${ids.length} task(s)`,
       });
-      if (blocked > 0) throw new Error(`${blocked} of the selected tasks have open escalations. Resolve them first.`);
+
+      await prisma.$transaction([
+        prisma.intervention.updateMany({ where: { taskId: { in: ids } }, data: { taskId: null } }),
+        prisma.appointment.updateMany({ where: { taskId: { in: ids } }, data: { taskId: null } }),
+        prisma.task.deleteMany({ where: { id: { in: ids } } }),
+      ]);
+    } else {
+      const data: { status?: TaskStatus; ownerRoleId?: string | null; lastUpdateAt: Date } = { lastUpdateAt: new Date() };
+      if (patch.status) data.status = patch.status;
+      if (patch.ownerRoleId !== undefined) data.ownerRoleId = patch.ownerRoleId;
+      await prisma.task.updateMany({ where: { id: { in: ids } }, data });
+      await prisma.taskUpdate.createMany({
+        data: ids.map((id) => ({
+          taskId: id,
+          authorId: userId,
+          note: `🔄 Bulk update — ${[
+            patch.status ? `status → ${patch.status.replace(/_/g, " ")}` : null,
+            patch.ownerRoleId !== undefined ? "owner reassigned" : null,
+          ].filter(Boolean).join(", ")}`,
+          newStatus: patch.status ?? null,
+        })),
+      });
+
+      await writeAudit({
+        actorId: userId,
+        action: "task.bulk_update",
+        entity: "Task",
+        entityId: null,
+        after: { ids, count: ids.length, patch: { status: patch.status, ownerRoleId: patch.ownerRoleId } },
+        note: `Bulk updated ${ids.length} task(s)`,
+      });
     }
-
-    const cleanedReason = (patch.reason || "").trim();
-
-    // Snapshot for the audit trail before we remove the rows.
-    const snapshot = await prisma.task.findMany({ where: { id: { in: ids } } });
-
-    await writeAudit({
-      actorId: userId,
-      action: "task.bulk_delete",
-      entity: "Task",
-      entityId: null,
-      before: snapshot,
-      after: { ids, count: ids.length, reason: cleanedReason || null },
-      note: `Bulk deleted ${ids.length} task(s)`,
-    });
-
-    await prisma.$transaction([
-      prisma.intervention.updateMany({ where: { taskId: { in: ids } }, data: { taskId: null } }),
-      prisma.appointment.updateMany({ where: { taskId: { in: ids } }, data: { taskId: null } }),
-      prisma.task.deleteMany({ where: { id: { in: ids } } }),
-    ]);
-  } else {
-    const data: { status?: TaskStatus; ownerRoleId?: string | null; lastUpdateAt: Date } = { lastUpdateAt: new Date() };
-    if (patch.status) data.status = patch.status;
-    if (patch.ownerRoleId !== undefined) data.ownerRoleId = patch.ownerRoleId;
-    await prisma.task.updateMany({ where: { id: { in: ids } }, data });
-    await prisma.taskUpdate.createMany({
-      data: ids.map((id) => ({
-        taskId: id,
-        authorId: userId,
-        note: `🔄 Bulk update — ${[
-          patch.status ? `status → ${patch.status.replace(/_/g, " ")}` : null,
-          patch.ownerRoleId !== undefined ? "owner reassigned" : null,
-        ].filter(Boolean).join(", ")}`,
-        newStatus: patch.status ?? null,
-      })),
-    });
-
-    await writeAudit({
-      actorId: userId,
-      action: "task.bulk_update",
-      entity: "Task",
-      entityId: null,
-      after: { ids, count: ids.length, patch: { status: patch.status, ownerRoleId: patch.ownerRoleId } },
-      note: `Bulk updated ${ids.length} task(s)`,
-    });
+  } catch (err) {
+    console.error("[bulkUpdateAction] DB error", err);
+    return {
+      success: false,
+      error: friendlyPrismaError(err) ?? "Could not apply bulk action due to a database error.",
+    };
   }
 
   revalidatePath("/sm/tasks");
   revalidatePath("/sm");
   revalidatePath("/cbo");
+  return { success: true, count: ids.length };
 }
 
 // ───────────────────────── helpers ─────────────────────────

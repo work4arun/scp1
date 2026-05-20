@@ -66,13 +66,18 @@ export function EditTaskForm({
     startTransition(async () => {
       try {
         const result = await updateTaskAction(taskId, form);
-        if (result && !result.success) {
+        if (!result.success) {
           setError(result.error);
           return;
         }
-        // redirect happens server-side on success
-      } catch {
-        setError("An unexpected error occurred. Please try again.");
+        // Navigate from the client so the server action stays a pure
+        // result-returning function. Returning the destination URL avoids the
+        // NEXT_REDIRECT-thrown-from-action bug that previously made the form
+        // show "An unexpected error occurred" on every successful save.
+        router.push(result.redirectTo ?? `/sm/tasks/${taskId}`);
+        router.refresh();
+      } catch (err) {
+        setError((err as Error)?.message || "An unexpected error occurred. Please try again.");
       }
     });
   }

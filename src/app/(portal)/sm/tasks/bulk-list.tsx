@@ -59,11 +59,12 @@ export function BulkTaskList({
     if (!bulkStatus || selected.size === 0) return;
     startTransition(async () => {
       try {
-        await bulkUpdateAction(Array.from(selected), { status: bulkStatus as TaskStatus });
+        const result = await bulkUpdateAction(Array.from(selected), { status: bulkStatus as TaskStatus });
+        if (!result.success) { alert(result.error); return; }
         setSelected(new Set()); setBulkStatus("");
         router.refresh();
       } catch (e) {
-        alert((e as Error).message || "Could not update status.");
+        alert((e as Error)?.message || "Could not update status.");
       }
     });
   }
@@ -72,11 +73,12 @@ export function BulkTaskList({
     const ownerRoleId = bulkOwner === "__unassign__" ? null : bulkOwner;
     startTransition(async () => {
       try {
-        await bulkUpdateAction(Array.from(selected), { ownerRoleId });
+        const result = await bulkUpdateAction(Array.from(selected), { ownerRoleId });
+        if (!result.success) { alert(result.error); return; }
         setSelected(new Set()); setBulkOwner("");
         router.refresh();
       } catch (e) {
-        alert((e as Error).message || "Could not reassign owner.");
+        alert((e as Error)?.message || "Could not reassign owner.");
       }
     });
   }
@@ -91,10 +93,11 @@ export function BulkTaskList({
     if (reason === null) return; // cancelled
     startTransition(async () => {
       try {
-        await softDeleteTaskAction(id, reason.trim());
+        const result = await softDeleteTaskAction(id, reason.trim());
+        if (!result.success) { alert(result.error); return; }
         router.refresh();
       } catch (e) {
-        alert((e as Error).message || "Could not delete task.");
+        alert((e as Error)?.message || "Could not delete task.");
       }
     });
   }
@@ -118,11 +121,12 @@ export function BulkTaskList({
     }
     startTransition(async () => {
       try {
-        await bulkUpdateAction(Array.from(selected), { action: "drop", reason });
+        const result = await bulkUpdateAction(Array.from(selected), { action: "drop", reason });
+        if (!result.success) { alert(result.error); return; }
         setSelected(new Set());
         router.refresh();
       } catch (e) {
-        alert((e as Error).message);
+        alert((e as Error)?.message || "Could not delete the selected tasks.");
       }
     });
   }
