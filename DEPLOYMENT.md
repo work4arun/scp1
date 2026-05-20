@@ -187,10 +187,24 @@ Open `.env` and set these values (the password is in `/root/scp-db-password.txt`
 ```env
 DATABASE_URL="postgresql://scp_user:THE_PASSWORD_FROM_STEP_2@127.0.0.1:5432/scp?schema=public"
 
+# Generate with:  openssl rand -base64 32
 AUTH_SECRET="GENERATE_WITH_openssl_rand_base64_32"
+# NextAuth v5 reads AUTH_SECRET; v4 legacy clients read NEXTAUTH_SECRET — set both to the same value.
+NEXTAUTH_SECRET="SAME_VALUE_AS_AUTH_SECRET"
 NEXTAUTH_URL="https://rathinamtechnicalcampus.com/scp"
 
 BASE_PATH="/scp"
+
+# Used in outgoing email links (task notifications, timer alarms).
+NEXT_PUBLIC_APP_URL="https://rathinamtechnicalcampus.com/scp"
+
+# Optional — leave blank to disable email notifications entirely.
+# SMTP_HOST="smtp.gmail.com"
+# SMTP_PORT="587"
+# SMTP_SECURE="false"
+# SMTP_USER="yourname@gmail.com"
+# SMTP_PASS="your-app-password"
+# SMTP_FROM="StartOS <noreply@rathinam.in>"
 
 SEED_SUPERADMIN_EMAIL="sadmin@rathinam.in"
 SEED_SUPERADMIN_PASSWORD="ChangeMe@123"
@@ -200,10 +214,11 @@ SEED_SM_EMAIL="sm@rathinam.in"
 SEED_SM_PASSWORD="ChangeMe@123"
 ```
 
-Generate `AUTH_SECRET`:
+Generate `AUTH_SECRET` and `NEXTAUTH_SECRET`:
 
 ```bash
 openssl rand -base64 32
+# use the output for BOTH AUTH_SECRET and NEXTAUTH_SECRET
 ```
 
 Lock the file:

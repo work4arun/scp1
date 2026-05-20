@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { StatusBadge, PriorityBadge } from "@/components/status-badges";
 import { formatRelative } from "@/lib/utils";
-import { CheckSquare, Square, Trash2, X } from "lucide-react";
-import { bulkUpdateAction } from "./[id]/edit/actions";
+import { CheckSquare, Square, Trash2, X, Pencil } from "lucide-react";
+import { bulkUpdateAction, softDeleteTaskAction } from "./[id]/edit/actions";
 import type { TaskStatus } from "@prisma/client";
 
 type Row = {
@@ -80,6 +80,25 @@ export function BulkTaskList({
       }
     });
   }
+  // Per-card single-task delete — works regardless of the bulk_actions feature
+  // flag so users always have a way to remove a task from the list without
+  // navigating into the detail page.
+  async function deleteOne(id: string, code: string) {
+    const reason = window.prompt(
+      `Permanently delete task ${code}? This cannot be undone.\n\nReason (optional):`,
+      "",
+    );
+    if (reason === null) return; // cancelled
+    startTransition(async () => {
+      try {
+        await softDeleteTaskAction(id, reason.trim());
+        router.refresh();
+      } catch (e) {
+        alert((e as Error).message || "Could not delete task.");
+      }
+    });
+  }
+
   async function applyDrop() {
     if (selected.size === 0) return;
     let reason = "";
@@ -169,6 +188,38 @@ export function BulkTaskList({
                         </div>
                       </div>
                     </Link>
+                    {/* Inline per-task actions — always visible so users can edit/delete
+                        a single task without descending into the detail page, even when
+                        the bulk_actions feature flag is OFF. */}
+                    <div className="flex gap-1 shrink-0 self-start">
+                      <Button
+                        asChild
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        aria-label={`Edit ${t.code}`}
+                        title="Edit task"
+                      >
+                        <Link href={`/sm/tasks/${t.id}/edit`} onClick={(e) => e.stopPropagation()}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Link>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-destructive border-destructive/40 hover:bg-destructive/5"
+                        aria-label={`Delete ${t.code}`}
+                        title="Delete task"
+                        disabled={pending}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          deleteOne(t.id, t.code);
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

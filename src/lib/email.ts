@@ -15,8 +15,25 @@
 
 import nodemailer from "nodemailer";
 
+// Module-level flag so we shout once at boot instead of on every email.
+let warnedUnconfigured = false;
+
 function getTransporter() {
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER) return null;
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER) {
+    if (!warnedUnconfigured) {
+      warnedUnconfigured = true;
+      console.warn(
+        "\n" +
+          "════════════════════════════════════════════════════════════════════\n" +
+          "  [email] SMTP IS NOT CONFIGURED.\n" +
+          "  No task assignment / update emails will be delivered.\n" +
+          "  Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM\n" +
+          "  in .env (or .env.local) and restart the server.\n" +
+          "════════════════════════════════════════════════════════════════════\n"
+      );
+    }
+    return null;
+  }
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: parseInt(process.env.SMTP_PORT || "587", 10),

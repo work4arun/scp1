@@ -14,11 +14,16 @@ export function TaskActions({
   taskId,
   code,
   hasOpenEscalation,
+  isSuperAdmin = false,
 }: {
   taskId: string;
   code: string;
   hasOpenEscalation: boolean;
+  isSuperAdmin?: boolean;
 }) {
+  // Super Admin can override the open-escalation lock on delete — the server
+  // action already allows it (canConfigureSystem) but the UI used to block it.
+  const blockDelete = hasOpenEscalation && !isSuperAdmin;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -65,7 +70,10 @@ export function TaskActions({
 
             {hasOpenEscalation ? (
               <div className="rounded-md bg-warning/10 text-warning px-3 py-2 text-xs font-medium mb-3">
-                ⚠️ This task has an open escalation to Dr. BN. Resolve it first or ask Super Admin to delete.
+                ⚠️ This task has an open escalation to Dr. BN.{" "}
+                {isSuperAdmin
+                  ? "As Super Admin you can still delete it — proceed with caution."
+                  : "Resolve it first or ask Super Admin to delete."}
               </div>
             ) : null}
 
@@ -84,7 +92,7 @@ export function TaskActions({
               <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={pending}>Cancel</Button>
               <Button
                 variant="destructive"
-                disabled={pending || hasOpenEscalation || confirmCode.trim() !== code}
+                disabled={pending || blockDelete || confirmCode.trim() !== code}
                 onClick={() => startTransition(async () => {
                   try {
                     await softDeleteTaskAction(taskId, reason.trim());

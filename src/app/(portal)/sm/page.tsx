@@ -14,11 +14,21 @@ export default async function SmHome() {
   const session = await auth();
   if (!canManageTasks(session?.user.systemRole)) redirect("/");
 
-  // ── "Today" window — local-day boundaries
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = new Date(startOfDay);
-  endOfDay.setDate(endOfDay.getDate() + 1);
+  // ── "Today" window — IST (Asia/Kolkata) boundaries.
+  //
+  // Previously this used `new Date().setHours(0,0,0,0)` which anchors midnight
+  // to the *server's* local timezone. On a UTC host (Vercel/Render/most cloud
+  // hosts) the window ran 00:00 UTC → 24:00 UTC, so a task created at, say,
+  // 03:00 IST (= 21:30 UTC previous day) fell outside "today" and silently
+  // disappeared from the dashboard until 05:30 IST.
+  //
+  // IST is a fixed UTC+5:30 offset (no DST), so we can compute the UTC instant
+  // of IST-midnight without pulling in a TZ library.
+  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+  const istNow = new Date(Date.now() + IST_OFFSET_MS);
+  istNow.setUTCHours(0, 0, 0, 0); // floor to IST midnight (expressed as UTC)
+  const startOfDay = new Date(istNow.getTime() - IST_OFFSET_MS);
+  const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
 
   // A task counts as "today's" if any of these are true:
   //   • it is due today (deadline within today)
@@ -52,7 +62,9 @@ export default async function SmHome() {
   ]);
 
   // Pretty date string for the header — e.g. "Tuesday, 5 May 2026"
+  // Force Asia/Kolkata so the header date matches the IST window above.
   const todayLabel = startOfDay.toLocaleDateString("en-IN", {
+    timeZone: "Asia/Kolkata",
     weekday: "long",
     day: "numeric",
     month: "long",

@@ -42,6 +42,7 @@ export default async function TaskDetail({ params }: { params: { id: string } })
             taskId={task.id}
             code={task.code}
             hasOpenEscalation={hasOpenEscalation}
+            isSuperAdmin={session?.user.systemRole === "SUPER_ADMIN"}
           />
         }
       />
