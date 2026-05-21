@@ -49,7 +49,16 @@ APP_DIR="${SCP_APP_DIR:-/opt/scp/app}"
 DEPLOY_SUBDIR_NAME="scp-deploy"          # folder inside the repo holding deploy files
 HEALTH_URL="${SCP_HEALTH_URL:-http://localhost/api/health}"
 HEALTH_TIMEOUT_S="${SCP_HEALTH_TIMEOUT_S:-90}"   # how long to wait for /api/health
-COMPOSE_PROJECT="${SCP_COMPOSE_PROJECT:-scp}"
+# Compose project name. Leave empty so docker compose derives it from the app
+# directory name (the default) — that matches how the stack was first brought
+# up and avoids "container name already in use" / "volume created for project
+# X" conflicts. Set SCP_COMPOSE_PROJECT only if you deliberately want to pin it.
+COMPOSE_PROJECT="${SCP_COMPOSE_PROJECT:-}"
+if [ -n "$COMPOSE_PROJECT" ]; then
+  PROJECT_ARGS=(-p "$COMPOSE_PROJECT")
+else
+  PROJECT_ARGS=()
+fi
 
 # ── Flag parsing ─────────────────────────────────────────────────────────────
 DO_PULL=1
@@ -150,7 +159,7 @@ log ".env present and not obviously placeholder. OK."
 # ── 4. Build ─────────────────────────────────────────────────────────────────
 if [ "$DO_BUILD" = "1" ]; then
   log "Building the app image (this may take a minute on first run, ~seconds on rebuilds) ..."
-  $DC -p "$COMPOSE_PROJECT" build app
+  $DC "${PROJECT_ARGS[@]}" build app
   log "Build complete."
 else
   log "Skipping docker build (--no-build / --restart)."
@@ -159,10 +168,10 @@ fi
 # ── 5. Up / restart ──────────────────────────────────────────────────────────
 if [ "$RESTART_ONLY" = "1" ]; then
   log "Restarting the stack ..."
-  $DC -p "$COMPOSE_PROJECT" restart
+  $DC "${PROJECT_ARGS[@]}" restart
 else
   log "Starting (or restarting) the stack in the background ..."
-  $DC -p "$COMPOSE_PROJECT" up -d
+  $DC "${PROJECT_ARGS[@]}" up -d
 fi
 
 # ── 6. Health check ──────────────────────────────────────────────────────────
@@ -185,23 +194,23 @@ if [ "$health_ok" = "1" ]; then
   if command -v jq >/dev/null 2>&1; then jq . /tmp/scp-health.json; else cat /tmp/scp-health.json; fi
 else
   log "Health check did not pass within ${HEALTH_TIMEOUT_S}s (last status: $last_status). Showing last 60 log lines from both containers:"
-  $DC -p "$COMPOSE_PROJECT" logs --no-color --tail 60 db  || true
-  $DC -p "$COMPOSE_PROJECT" logs --no-color --tail 60 app || true
+  $DC "${PROJECT_ARGS[@]}" logs --no-color --tail 60 db  || true
+  $DC "${PROJECT_ARGS[@]}" logs --no-color --tail 60 app || true
   fail "Deploy completed but the app is not responding. Investigate the logs above."
 fi
 
 # ── 7. Final summary ─────────────────────────────────────────────────────────
 log "Container status:"
-$DC -p "$COMPOSE_PROJECT" ps
+$DC "${PROJECT_ARGS[@]}" ps
 
 log "Deploy finished successfully at $(date -Iseconds)."
-log "Quick links:"
-log "  • Tail app logs:    $DC -p $COMPOSE_PROJECT logs -f app"
-log "  • Tail db logs:     $DC -p $COMPOSE_PROJECT logs -f db"
-log "  • psql shell:       $DC -p $COMPOSE_PROJECT exec db psql -U scp -d scp"
+log "Quick links (run these from $APP_DIR):"
+log "  • Tail app logs:    $DC logs -f app"
+log "  • Tail db logs:     $DC logs -f db"
+log "  • psql shell:       $DC exec db psql -U scp -d scp"
 log "  • Health endpoint:  $HEALTH_URL"
 
 if [ "$TAIL_LOGS" = "1" ]; then
   log "Tailing app logs (Ctrl-C to stop — the app keeps running):"
-  exec $DC -p "$COMPOSE_PROJECT" logs -f app
+  exec $DC "${PROJECT_ARGS[@]}" logs -f app
 fi
