@@ -7,6 +7,8 @@ import { revalidatePath } from "next/cache";
 import { requireFeature } from "@/lib/features";
 import { writeAudit } from "@/lib/audit";
 import { computeSlaDueAt } from "@/lib/sla";
+import { computeNextTaskCode } from "@/lib/task-code";
+import type { Task } from "@prisma/client";
 
 async function ensureCbo() {
   const session = await auth();
@@ -106,38 +108,57 @@ export async function activateParkingItemAsTaskAction(
 
   const slaDueAt = await computeSlaDueAt(priority.code);
 
-  const created = await prisma.$transaction(async (tx) => {
-    const count = await tx.task.count({ where: { verticalId } });
-    const newCode = `${vertical.code}-${String(count + 1).padStart(3, "0")}`;
-    const t = await tx.task.create({
-      data: {
-        code: newCode,
-        title,
-        description: [
-          parking.idea,
-          parking.suggestedBy ? `Suggested by: ${parking.suggestedBy}` : null,
-          parking.expectedImpact ? `Impact: ${parking.expectedImpact}` : null,
-          parking.urgency ? `Urgency: ${parking.urgency}` : null,
-          parking.remarks ? `Remarks: ${parking.remarks}` : null,
-        ]
-          .filter(Boolean)
-          .join("\n"),
-        verticalId,
-        priorityId,
-        status: "NOT_STARTED",
-        source: "NEW_IDEA",
-        createdById: userId,
-        deadline: deadlineStr ? new Date(deadlineStr) : null,
-        slaDueAt,
-        sourceParkingId: parking.id,
-      },
-    });
-    await tx.parkingLot.update({
-      where: { id: parkingId },
-      data: { decision: "Activate" },
-    });
-    return t;
-  });
+  // ── Atomic code generation + task creation ──
+  // computeNextTaskCode (advisory lock + JS suffix parsing — see
+  // src/lib/task-code.ts) replaces the old `count() + 1` formula, which
+  // collided with a P2002 unique-constraint error whenever a task in the
+  // vertical had been hard-deleted. The retry loop recomputes from freshly
+  // committed data.
+  let created: Task | null = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      created = await prisma.$transaction(async (tx) => {
+        const newCode = await computeNextTaskCode(tx, verticalId, vertical.code);
+        const t = await tx.task.create({
+          data: {
+            code: newCode,
+            title,
+            description: [
+              parking.idea,
+              parking.suggestedBy ? `Suggested by: ${parking.suggestedBy}` : null,
+              parking.expectedImpact ? `Impact: ${parking.expectedImpact}` : null,
+              parking.urgency ? `Urgency: ${parking.urgency}` : null,
+              parking.remarks ? `Remarks: ${parking.remarks}` : null,
+            ]
+              .filter(Boolean)
+              .join("\n"),
+            verticalId,
+            priorityId,
+            status: "NOT_STARTED",
+            source: "NEW_IDEA",
+            createdById: userId,
+            deadline: deadlineStr ? new Date(deadlineStr) : null,
+            slaDueAt,
+            sourceParkingId: parking.id,
+          },
+        });
+        await tx.parkingLot.update({
+          where: { id: parkingId },
+          data: { decision: "Activate" },
+        });
+        return t;
+      });
+      break;
+    } catch (err: unknown) {
+      if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "P2002") {
+        continue; // code collided — recompute from committed data and retry
+      }
+      throw err;
+    }
+  }
+  if (!created) {
+    throw new Error("Could not generate a unique task code after several attempts. Please refresh and try again.");
+  }
 
   await writeAudit({
     actorId: userId,

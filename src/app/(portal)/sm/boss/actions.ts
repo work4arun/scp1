@@ -5,10 +5,11 @@ import { auth } from "@/lib/auth";
 import { canManageTasks } from "@/lib/rbac";
 import { revalidatePath } from "next/cache";
 import { notifyAllCBO } from "@/lib/notify";
-import type { TaskSource, BossInstructionStatus } from "@prisma/client";
+import type { TaskSource, BossInstructionStatus, Task } from "@prisma/client";
 import { isEnabled, requireFeature } from "@/lib/features";
 import { writeAudit } from "@/lib/audit";
 import { computeSlaDueAt } from "@/lib/sla";
+import { computeNextTaskCode } from "@/lib/task-code";
 
 export async function captureBossInstructionAction(formData: FormData) {
   const session = await auth();
@@ -136,35 +137,54 @@ export async function activateInstructionAsTaskAction(
 
   const slaDueAt = await computeSlaDueAt(priority.code);
 
-  const created = await prisma.$transaction(async (tx) => {
-    const count = await tx.task.count({ where: { verticalId } });
-    const newCode = `${vertical.code}-${String(count + 1).padStart(3, "0")}`;
-    const t = await tx.task.create({
-      data: {
-        code: newCode,
-        title,
-        description: instruction.instruction,
-        verticalId,
-        priorityId,
-        status: "NOT_STARTED",
-        source: "BOSS_INSTRUCTION",
-        createdById: userId,
-        deadline,
-        slaDueAt,
-        sourceInstructionId: instruction.id,
-      },
-    });
-    await tx.bossInstruction.update({
-      where: { id: instructionId },
-      data: {
-        state: "ACTIVATED",
-        status: "Activated",
-        activatedAt: new Date(),
-        linkedTaskId: t.id,
-      },
-    });
-    return t;
-  });
+  // ── Atomic code generation + task creation ──
+  // The next per-vertical code comes from computeNextTaskCode (advisory lock +
+  // JS suffix parsing — see src/lib/task-code.ts). The previous `count() + 1`
+  // formula collided with a P2002 unique-constraint error whenever any task in
+  // the vertical had been hard-deleted (count would be 5 even though MKT-006
+  // already existed). The retry loop recomputes from freshly committed data.
+  let created: Task | null = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      created = await prisma.$transaction(async (tx) => {
+        const newCode = await computeNextTaskCode(tx, verticalId, vertical.code);
+        const t = await tx.task.create({
+          data: {
+            code: newCode,
+            title,
+            description: instruction.instruction,
+            verticalId,
+            priorityId,
+            status: "NOT_STARTED",
+            source: "BOSS_INSTRUCTION",
+            createdById: userId,
+            deadline,
+            slaDueAt,
+            sourceInstructionId: instruction.id,
+          },
+        });
+        await tx.bossInstruction.update({
+          where: { id: instructionId },
+          data: {
+            state: "ACTIVATED",
+            status: "Activated",
+            activatedAt: new Date(),
+            linkedTaskId: t.id,
+          },
+        });
+        return t;
+      });
+      break;
+    } catch (err: unknown) {
+      if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "P2002") {
+        continue; // code collided — recompute from committed data and retry
+      }
+      throw err;
+    }
+  }
+  if (!created) {
+    throw new Error("Could not generate a unique task code after several attempts. Please refresh and try again.");
+  }
 
   await writeAudit({
     actorId: userId,
