@@ -31,14 +31,24 @@ RUN --mount=type=cache,target=/root/.npm \
 # ---------- 2) builder ----------
 FROM node:20-alpine AS builder
 WORKDIR /app
+# Skip Next.js telemetry — saves a network call on every build.
+ENV NEXT_TELEMETRY_DISABLED=1
 RUN apk add --no-cache libc6-compat openssl
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # Make sure /app/public exists even if the repo doesn't ship one
 RUN mkdir -p public
-# Generate Prisma client + build Next.js
-RUN npx prisma generate
-RUN npm run build
+# Build Next.js. `npm run build` already runs `prisma generate` first (see the
+# build script in package.json), so we do NOT call `prisma generate` separately
+# — that was duplicate work on every build.
+#
+# The BuildKit cache mount for `.next/cache` lets Next.js reuse its compiler
+# cache (webpack module cache, etc.) across builds. The first build is full
+# speed; subsequent rebuilds after a code change are dramatically faster
+# because unchanged modules are pulled from cache instead of recompiled.
+# The mount is ephemeral — it is NOT baked into the image, so it adds no size.
+RUN --mount=type=cache,target=/app/.next/cache \
+    npm run build
 # Drop npm's tarball cache — we won't be installing more packages in the runner.
 RUN npm cache clean --force
 
@@ -47,6 +57,7 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV NEXT_TELEMETRY_DISABLED=1
 RUN apk add --no-cache openssl tini \
  && addgroup -S nodejs && adduser -S nextjs -G nodejs
 

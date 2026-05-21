@@ -35,6 +35,14 @@
 
 set -Eeuo pipefail
 
+# ── BuildKit ─────────────────────────────────────────────────────────────────
+# The Dockerfile uses BuildKit cache mounts ( --mount=type=cache ) for the npm
+# cache and the Next.js compiler cache. These require BuildKit. Modern Docker
+# enables it by default, but we export the flags so the build is fast even on
+# older daemons.
+export DOCKER_BUILDKIT=1
+export COMPOSE_DOCKER_CLI_BUILD=1
+
 # ── Configuration ────────────────────────────────────────────────────────────
 # Override any of these via environment variables before invoking the script.
 APP_DIR="${SCP_APP_DIR:-/opt/scp/app}"

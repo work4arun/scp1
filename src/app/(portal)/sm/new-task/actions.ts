@@ -10,6 +10,7 @@ import type { TaskSource, InterventionFlag } from "@prisma/client";
 import { computeSlaDueAt } from "@/lib/sla";
 import { writeAudit } from "@/lib/audit";
 import { friendlyPrismaError } from "@/lib/prisma-errors";
+import { computeNextTaskCode } from "@/lib/task-code";
 
 export type CreateTaskResult =
   | { success: true; id: string }
@@ -90,40 +91,23 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
 
   // ── Atomic code generation + task creation ──
   //
-  // Previous implementation used `tx.task.count() + 1` which is racy by
-  // construction: two concurrent transactions (or a single double-submit) read
-  // the same count and produced the same code, hitting the `code @unique`
-  // constraint (P2002). It also failed silently when dropped/legacy rows left
-  // a gap that count() didn't see — count = 5 even though MKT-006 exists.
+  // The next per-vertical code is computed by `computeNextTaskCode`, which
+  // takes a per-vertical Postgres advisory lock and parses the numeric suffix
+  // of existing codes IN JAVASCRIPT — not via a SQL regex. (A `\d` regex
+  // inside a Prisma `$queryRaw` template literal is silently cooked down to
+  // `d`, which made the old query always return 1 and collide forever. See
+  // src/lib/task-code.ts for the full history.)
   //
-  // Correct approach:
-  //   1. Take a Postgres advisory transaction lock keyed on verticalId so
-  //      concurrent creates against the same vertical serialize. Different
-  //      verticals do not block each other. We cast hashtext()'s int4 result
-  //      to bigint explicitly so PgBouncer / RDS Proxy don't mis-resolve the
-  //      overload as the (int, int) form.
-  //   2. Compute the next sequence by parsing the numeric suffix of the
-  //      maximum existing code for this vertical (including dropped rows,
-  //      so we never recycle a code).
-  //   3. Wrap in a small retry loop as belt-and-suspenders defence against
-  //      any out-of-band inserts.
+  // The retry loop is a belt-and-suspenders defence: if some out-of-band
+  // insert (manual SQL, data import) ever causes a P2002, the next attempt
+  // recomputes the max from freshly committed data and moves past it.
   let created;
-  const MAX_ATTEMPTS = 3;
+  const MAX_ATTEMPTS = 5;
   let lastErr: unknown = null;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     try {
       created = await prisma.$transaction(async (tx) => {
-        // 1) Per-vertical advisory lock — released automatically on tx commit/rollback.
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${verticalId})::bigint)`;
-
-        // 2) Next number = MAX(numeric suffix of existing codes for this vertical) + 1.
-        //    SUBSTRING ... '\d+$' extracts the trailing number of e.g. "MKT-007" -> "7".
-        const rows = await tx.$queryRaw<{ next: bigint | number | null }[]>`
-          SELECT COALESCE(MAX(CAST(SUBSTRING("code" FROM '\d+$') AS INTEGER)), 0) + 1 AS next
-          FROM "Task" WHERE "verticalId" = ${verticalId}
-        `;
-        const nextNum = rows[0]?.next ? Number(rows[0].next) : 1;
-        const code = `${vertical.code}-${String(nextNum).padStart(3, "0")}`;
+        const code = await computeNextTaskCode(tx, verticalId, vertical.code);
 
         return tx.task.create({
           data: {
@@ -152,9 +136,7 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
       break; // success
     } catch (err: unknown) {
       lastErr = err;
-      // P2002 = unique constraint violation. Retry — the advisory lock should
-      // make this impossible, but if a manual insert slipped through we
-      // recompute MAX(code)+1 on the next attempt.
+      // P2002 = unique constraint violation. Retry — recompute on next attempt.
       if (
         err &&
         typeof err === "object" &&

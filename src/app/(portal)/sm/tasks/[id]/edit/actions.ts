@@ -10,6 +10,7 @@ import { notifyAllCBO } from "@/lib/notify";
 import { writeAudit } from "@/lib/audit";
 import { isEnabled } from "@/lib/features";
 import { friendlyPrismaError } from "@/lib/prisma-errors";
+import { computeNextTaskCode } from "@/lib/task-code";
 
 const HUMAN_FIELD: Record<string, string> = {
   title: "Title",
@@ -363,19 +364,15 @@ export async function duplicateTaskAction(taskId: string): Promise<DuplicateTask
   const vertical = await prisma.vertical.findUnique({ where: { id: original.verticalId } });
   if (!vertical) return { success: false, error: "Vertical not found — please refresh." };
 
-  const MAX_ATTEMPTS = 3;
+  const MAX_ATTEMPTS = 5;
   let created: { id: string } | null = null;
   let lastErr: unknown = null;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     try {
       created = await prisma.$transaction(async (tx) => {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${vertical.id})::bigint)`;
-        const rows = await tx.$queryRaw<{ next: bigint | number | null }[]>`
-          SELECT COALESCE(MAX(CAST(SUBSTRING("code" FROM '\d+$') AS INTEGER)), 0) + 1 AS next
-          FROM "Task" WHERE "verticalId" = ${vertical.id}
-        `;
-        const nextNum = rows[0]?.next ? Number(rows[0].next) : 1;
-        const newCode = `${vertical.code}-${String(nextNum).padStart(3, "0")}`;
+        // Shared generator — parses the suffix in JS, not via a SQL regex.
+        // See src/lib/task-code.ts for why the old SQL approach was broken.
+        const newCode = await computeNextTaskCode(tx, vertical.id, vertical.code);
         return tx.task.create({
           data: {
             code: newCode,
