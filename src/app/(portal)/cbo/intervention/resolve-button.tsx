@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 export function ResolveButton({ id }: { id: string }) {
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
@@ -22,6 +23,11 @@ export function ResolveButton({ id }: { id: string }) {
   }
   return (
     <div className="w-full space-y-2">
+      {error ? (
+        <div className="rounded-md bg-destructive/10 text-destructive px-3 py-2 text-xs font-medium">
+          {error}
+        </div>
+      ) : null}
       <Label>Resolution note (optional)</Label>
       <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="What did you decide?" />
       <div className="flex justify-end gap-2">
@@ -29,13 +35,18 @@ export function ResolveButton({ id }: { id: string }) {
         <Button
           size="sm"
           disabled={pending}
-          onClick={() =>
+          onClick={() => {
+            setError(null);
             startTransition(async () => {
-              await resolveInterventionAction(id, note);
+              const result = await resolveInterventionAction(id, note);
+              if (!result.success) {
+                setError(result.error);
+                return;
+              }
               setOpen(false);
               router.refresh();
-            })
-          }
+            });
+          }}
         >
           {pending ? "Saving…" : "Mark resolved"}
         </Button>

@@ -10,30 +10,47 @@ import { isEnabled, requireFeature } from "@/lib/features";
 import { writeAudit } from "@/lib/audit";
 import { computeSlaDueAt } from "@/lib/sla";
 import { computeNextTaskCode } from "@/lib/task-code";
+import { friendlyPrismaError } from "@/lib/prisma-errors";
 
-export async function captureBossInstructionAction(formData: FormData) {
+const FORBIDDEN_MSG =
+  "Your session is no longer valid or you don't have permission for this action. Please sign in again.";
+
+export type CaptureResult = { success: true } | { success: false; error: string };
+
+export async function captureBossInstructionAction(formData: FormData): Promise<CaptureResult> {
   const session = await auth();
-  if (!canManageTasks(session?.user.systemRole) || !session?.user.id) throw new Error("Forbidden");
+  if (!canManageTasks(session?.user.systemRole) || !session?.user.id) {
+    return { success: false, error: FORBIDDEN_MSG };
+  }
 
   const instruction = String(formData.get("instruction") || "").trim();
   const source = ((formData.get("source") as string) || "BOSS_INSTRUCTION") as TaskSource;
   const verticalId = (formData.get("verticalId") as string) || null;
   const responseGiven = (formData.get("responseGiven") as string) || null;
-  if (!instruction) return;
+  if (!instruction) return { success: false, error: "Instruction text is required." };
 
-  await prisma.bossInstruction.create({
-    data: {
-      instruction,
-      source,
-      verticalId,
-      responseGiven,
-      capturedById: session.user.id,
-    },
-  });
+  try {
+    await prisma.bossInstruction.create({
+      data: {
+        instruction,
+        source,
+        verticalId,
+        responseGiven,
+        capturedById: session.user.id,
+      },
+    });
+  } catch (err) {
+    console.error("[captureBossInstructionAction] DB error", err);
+    return {
+      success: false,
+      error: friendlyPrismaError(err) ?? "Could not save the instruction. Please try again.",
+    };
+  }
 
   revalidatePath("/sm/boss");
   revalidatePath("/cbo/daily");
 
+  // notifyAllCBO swallows its own errors — no try/catch needed here.
   await notifyAllCBO({
     kind: "boss.captured",
     title: "📥 Boss instruction captured",
@@ -41,18 +58,22 @@ export async function captureBossInstructionAction(formData: FormData) {
     link: "/cbo/daily",
     senderId: session.user.id,
   });
+
+  return { success: true };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Boss Instruction Activation Workflow (gated by `boss_instruction_workflow`)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function ensureSm() {
+type Authed = { ok: true; userId: string } | { ok: false; error: string };
+
+async function ensureSm(): Promise<Authed> {
   const session = await auth();
   if (!canManageTasks(session?.user.systemRole) || !session?.user.id) {
-    throw new Error("Forbidden");
+    return { ok: false, error: FORBIDDEN_MSG };
   }
-  return session.user.id;
+  return { ok: true, userId: session.user.id };
 }
 
 const STATUS_TO_LEGACY: Record<BossInstructionStatus, string> = {
@@ -62,36 +83,55 @@ const STATUS_TO_LEGACY: Record<BossInstructionStatus, string> = {
   CLOSED: "Closed",
 };
 
+export type SetStateResult = { success: true } | { success: false; error: string };
+
 export async function setInstructionStateAction(
   instructionId: string,
   state: BossInstructionStatus,
-) {
-  await requireFeature("boss_instruction_workflow");
-  const userId = await ensureSm();
+): Promise<SetStateResult> {
+  try {
+    await requireFeature("boss_instruction_workflow");
+  } catch {
+    return { success: false, error: "This feature is currently disabled. Ask a Super Admin to enable 'boss_instruction_workflow'." };
+  }
+
+  const authed = await ensureSm();
+  if (!authed.ok) return { success: false, error: authed.error };
+  const { userId } = authed;
 
   const before = await prisma.bossInstruction.findUnique({ where: { id: instructionId } });
-  if (!before) throw new Error("Instruction not found");
+  if (!before) return { success: false, error: "Instruction not found — it may have been deleted. Please refresh." };
 
-  const after = await prisma.bossInstruction.update({
-    where: { id: instructionId },
-    data: {
-      state,
-      status: STATUS_TO_LEGACY[state],
-      activatedAt: state === "ACTIVATED" ? new Date() : before.activatedAt,
-    },
-  });
+  try {
+    const after = await prisma.bossInstruction.update({
+      where: { id: instructionId },
+      data: {
+        state,
+        status: STATUS_TO_LEGACY[state],
+        activatedAt: state === "ACTIVATED" ? new Date() : before.activatedAt,
+      },
+    });
 
-  await writeAudit({
-    actorId: userId,
-    action: `boss.${state.toLowerCase()}`,
-    entity: "BossInstruction",
-    entityId: instructionId,
-    before,
-    after,
-  });
+    // writeAudit swallows its own errors — no try/catch needed.
+    await writeAudit({
+      actorId: userId,
+      action: `boss.${state.toLowerCase()}`,
+      entity: "BossInstruction",
+      entityId: instructionId,
+      before,
+      after,
+    });
+  } catch (err) {
+    console.error("[setInstructionStateAction] DB error", err);
+    return {
+      success: false,
+      error: friendlyPrismaError(err) ?? "Could not update the instruction state. Please try again.",
+    };
+  }
 
   revalidatePath("/sm/boss");
   revalidatePath("/cbo/daily");
+  return { success: true };
 }
 
 /**
@@ -102,23 +142,34 @@ export async function setInstructionStateAction(
  * Optional: verticalId (falls back to instruction.verticalId), title (falls
  * back to a 60-char excerpt of the instruction text), deadline.
  */
+export type ActivateResult =
+  | { success: true; taskId: string; taskCode: string }
+  | { success: false; error: string };
+
 export async function activateInstructionAsTaskAction(
   instructionId: string,
   formData: FormData,
-): Promise<{ taskId: string; taskCode: string }> {
-  await requireFeature("boss_instruction_workflow");
-  const userId = await ensureSm();
+): Promise<ActivateResult> {
+  try {
+    await requireFeature("boss_instruction_workflow");
+  } catch {
+    return { success: false, error: "This feature is currently disabled. Ask a Super Admin to enable 'boss_instruction_workflow'." };
+  }
+
+  const authed = await ensureSm();
+  if (!authed.ok) return { success: false, error: authed.error };
+  const { userId } = authed;
 
   const instruction = await prisma.bossInstruction.findUnique({ where: { id: instructionId } });
-  if (!instruction) throw new Error("Instruction not found");
+  if (!instruction) return { success: false, error: "Instruction not found — it may have been deleted. Please refresh." };
   if (instruction.linkedTaskId) {
-    throw new Error("This instruction has already been activated as a task.");
+    return { success: false, error: "This instruction has already been activated as a task." };
   }
 
   const verticalId = String(formData.get("verticalId") || instruction.verticalId || "");
   const priorityId = String(formData.get("priorityId") || "");
-  if (!verticalId) throw new Error("Vertical is required to activate this instruction.");
-  if (!priorityId) throw new Error("Priority is required to activate this instruction.");
+  if (!verticalId) return { success: false, error: "Vertical is required to activate this instruction." };
+  if (!priorityId) return { success: false, error: "Priority is required to activate this instruction." };
 
   const titleRaw = String(formData.get("title") || "").trim();
   const title =
@@ -130,10 +181,10 @@ export async function activateInstructionAsTaskAction(
   const deadline = deadlineStr ? new Date(deadlineStr) : null;
 
   const vertical = await prisma.vertical.findUnique({ where: { id: verticalId } });
-  if (!vertical) throw new Error("Vertical not found");
+  if (!vertical) return { success: false, error: "Selected vertical was not found. Please refresh and try again." };
 
   const priority = await prisma.priority.findUnique({ where: { id: priorityId } });
-  if (!priority) throw new Error("Priority not found");
+  if (!priority) return { success: false, error: "Selected priority was not found. Please refresh and try again." };
 
   const slaDueAt = await computeSlaDueAt(priority.code);
 
@@ -144,6 +195,7 @@ export async function activateInstructionAsTaskAction(
   // the vertical had been hard-deleted (count would be 5 even though MKT-006
   // already existed). The retry loop recomputes from freshly committed data.
   let created: Task | null = null;
+  let lastErr: unknown = null;
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
       created = await prisma.$transaction(async (tx) => {
@@ -174,18 +226,29 @@ export async function activateInstructionAsTaskAction(
         });
         return t;
       });
+      lastErr = null;
       break;
     } catch (err: unknown) {
+      lastErr = err;
       if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "P2002") {
         continue; // code collided — recompute from committed data and retry
       }
-      throw err;
+      console.error("[activateInstructionAsTaskAction] DB error", err);
+      return {
+        success: false,
+        error: friendlyPrismaError(err) ?? "Could not create the task due to a database error. Please try again.",
+      };
     }
   }
   if (!created) {
-    throw new Error("Could not generate a unique task code after several attempts. Please refresh and try again.");
+    console.error("[activateInstructionAsTaskAction] exhausted retries", lastErr);
+    return {
+      success: false,
+      error: "Could not generate a unique task code after several attempts. Please refresh and try again.",
+    };
   }
 
+  // writeAudit and notifyAllCBO swallow their own errors.
   await writeAudit({
     actorId: userId,
     action: "boss.activated_as_task",
@@ -195,7 +258,6 @@ export async function activateInstructionAsTaskAction(
     note: `Activated as task ${created.code}`,
   });
 
-  // Notify CBO so they can see the new task in their daily summary.
   if (await isEnabled("audit_log_v2")) {
     await notifyAllCBO({
       kind: "task.created",
@@ -210,5 +272,5 @@ export async function activateInstructionAsTaskAction(
   revalidatePath("/sm/boss");
   revalidatePath("/sm/tasks");
   revalidatePath("/cbo");
-  return { taskId: created.id, taskCode: created.code };
+  return { success: true, taskId: created.id, taskCode: created.code };
 }

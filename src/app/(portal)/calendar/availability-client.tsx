@@ -22,11 +22,10 @@ export function AvailabilityForm() {
     f.set("startMin", String(startMin));
     f.set("endMin", String(endMin));
     startTransition(async () => {
-      try {
-        await setAvailabilityAction(f);
-        (e.currentTarget as HTMLFormElement).reset();
-        router.refresh();
-      } catch (err) { alert((err as Error).message); }
+      const result = await setAvailabilityAction(f);
+      if (!result.success) { alert(result.error); return; }
+      (e.currentTarget as HTMLFormElement).reset();
+      router.refresh();
     });
   }
 
@@ -75,7 +74,11 @@ export function AvailabilityRow({ a }: { a: { id: string; dayOfWeek: number; sta
         variant="ghost" size="sm" disabled={pending}
         onClick={() => {
           if (!confirm("Remove this availability slot?")) return;
-          startTransition(async () => { await deleteAvailabilityAction(a.id); router.refresh(); });
+          startTransition(async () => {
+            const r = await deleteAvailabilityAction(a.id);
+            if (!r.success) { alert(r.error); return; }
+            router.refresh();
+          });
         }}
       >
         <Trash2 className="h-4 w-4 text-destructive" />

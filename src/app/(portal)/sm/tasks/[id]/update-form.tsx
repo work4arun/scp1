@@ -14,6 +14,7 @@ export function TaskUpdateForm({ taskId, currentStatus }: { taskId: string; curr
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [selectedStatus, setSelectedStatus] = useState<string>("");
+  const [error, setError] = useState<string | null>(null);
 
   const showDelayReason = selectedStatus === "DELAYED" || (selectedStatus === "" && currentStatus === "DELAYED");
 
@@ -27,24 +28,30 @@ export function TaskUpdateForm({ taskId, currentStatus }: { taskId: string; curr
 
     // We need either a note OR a status change — otherwise nothing to record.
     if (!note && !status) {
-      alert("Please add a note or pick a new status.");
+      setError("Please add a note or pick a new status.");
       return;
     }
 
+    setError(null);
     startTransition(async () => {
-      try {
-        await addUpdateAction(taskId, form);
-        formEl.reset();
-        setSelectedStatus("");
-        router.refresh();
-      } catch (err) {
-        alert((err as Error).message || "Could not save the update.");
+      const result = await addUpdateAction(taskId, form);
+      if (!result.success) {
+        setError(result.error);
+        return;
       }
+      formEl.reset();
+      setSelectedStatus("");
+      router.refresh();
     });
   }
 
   return (
     <form onSubmit={onSubmit} className="space-y-3">
+      {error ? (
+        <div className="rounded-md bg-destructive/10 text-destructive px-3 py-2 text-sm font-medium">
+          {error}
+        </div>
+      ) : null}
       <div className="space-y-1.5">
         <Label htmlFor="note">
           What&apos;s the update?{" "}

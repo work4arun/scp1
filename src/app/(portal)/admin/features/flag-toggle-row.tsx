@@ -31,11 +31,10 @@ export function FlagToggleRow({
     setOptimistic(next);
     setError(null);
     startTransition(async () => {
-      try {
-        await toggleFeatureAction(flagKey, next);
-      } catch (err) {
-        setOptimistic(!next); // revert
-        setError(err instanceof Error ? err.message : "Toggle failed");
+      const result = await toggleFeatureAction(flagKey, next);
+      if (!result.success) {
+        setOptimistic(!next); // revert optimistic update
+        setError(result.error);
       }
     });
   };

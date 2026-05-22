@@ -46,11 +46,13 @@ export function BookingForm({
     f.set("attendeeId", cboId);
 
     startTransition(async () => {
-      try {
-        await bookAppointmentAction(f);
-        router.push("/calendar");
-        router.refresh();
-      } catch (err) { alert((err as Error).message); }
+      const result = await bookAppointmentAction(f);
+      if (!result.success) {
+        alert(result.error);
+        return;
+      }
+      router.push("/calendar");
+      router.refresh();
     });
   }
 

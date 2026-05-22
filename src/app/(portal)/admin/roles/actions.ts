@@ -6,10 +6,17 @@ import { canConfigureSystem } from "@/lib/rbac";
 import { revalidatePath } from "next/cache";
 import { writeAudit } from "@/lib/audit";
 
-async function ensureAdmin() {
+const FORBIDDEN_MSG =
+  "Your session is no longer valid or you don't have permission for this action. Please sign in again.";
+
+type Authed = { ok: true; userId: string } | { ok: false; error: string };
+
+async function ensureAdmin(): Promise<Authed> {
   const session = await auth();
-  if (!canConfigureSystem(session?.user.systemRole) || !session?.user.id) throw new Error("Forbidden");
-  return session.user.id;
+  if (!canConfigureSystem(session?.user.systemRole) || !session?.user.id) {
+    return { ok: false, error: FORBIDDEN_MSG };
+  }
+  return { ok: true, userId: session.user.id };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -20,7 +27,8 @@ export async function upsertOwnerRoleAction(
   formData: FormData,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    await ensureAdmin();
+    const authed = await ensureAdmin();
+    if (!authed.ok) return { ok: false, error: authed.error };
     const id = (formData.get("id") as string) || null;
     const name = String(formData.get("name") || "").trim();
     const description = (formData.get("description") as string) || null;
@@ -74,7 +82,8 @@ export async function upsertOwnerRoleAction(
 
 export async function deleteOwnerRoleAction(id: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    await ensureAdmin();
+    const authed = await ensureAdmin();
+    if (!authed.ok) return { ok: false, error: authed.error };
     const [taskCount, userCount] = await Promise.all([
       prisma.task.count({ where: { ownerRoleId: id } }),
       prisma.user.count({ where: { ownerRoleId: id } }),
@@ -108,7 +117,9 @@ export async function setRoleOwnerContactAction(
   roleId: string,
   formData: FormData,
 ): Promise<SetOwnerContactResult> {
-  const adminId = await ensureAdmin();
+  const authed = await ensureAdmin();
+  if (!authed.ok) return { ok: false, error: authed.error };
+  const adminId = authed.userId;
 
   const role = await prisma.ownerRole.findUnique({ where: { id: roleId } });
   if (!role) return { ok: false, error: "Role not found." };
@@ -146,24 +157,37 @@ export async function setRoleOwnerContactAction(
   return { ok: true, ownerName: updated.ownerName, ownerEmail: updated.ownerEmail };
 }
 
-export async function clearRoleOwnerContactAction(roleId: string) {
-  const adminId = await ensureAdmin();
+export type ClearContactResult = { ok: true } | { ok: false; error: string };
+
+export async function clearRoleOwnerContactAction(roleId: string): Promise<ClearContactResult> {
+  const authed = await ensureAdmin();
+  if (!authed.ok) return { ok: false, error: authed.error };
+  const adminId = authed.userId;
+
   const role = await prisma.ownerRole.findUnique({ where: { id: roleId } });
-  if (!role) throw new Error("Role not found");
+  if (!role) return { ok: false, error: "Role not found — it may have been deleted. Please refresh." };
 
-  await prisma.ownerRole.update({
-    where: { id: roleId },
-    data: { ownerName: null, ownerEmail: null },
-  });
+  try {
+    await prisma.ownerRole.update({
+      where: { id: roleId },
+      data: { ownerName: null, ownerEmail: null },
+    });
 
-  await writeAudit({
-    actorId: adminId,
-    action: "role.contact_cleared",
-    entity: "OwnerRole",
-    entityId: roleId,
-    before: { ownerName: role.ownerName, ownerEmail: role.ownerEmail },
-    note: `Cleared owner contact for ${role.name}`,
-  });
+    // writeAudit swallows its own errors.
+    await writeAudit({
+      actorId: adminId,
+      action: "role.contact_cleared",
+      entity: "OwnerRole",
+      entityId: roleId,
+      before: { ownerName: role.ownerName, ownerEmail: role.ownerEmail },
+      note: `Cleared owner contact for ${role.name}`,
+    });
+  } catch (err) {
+    console.error("[clearRoleOwnerContactAction] DB error", err);
+    const e = err as { code?: string; message?: string };
+    return { ok: false, error: e?.message || "Could not clear the contact. Please try again." };
+  }
 
   revalidatePath("/admin/roles");
+  return { ok: true };
 }

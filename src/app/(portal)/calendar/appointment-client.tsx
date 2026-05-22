@@ -30,6 +30,7 @@ export function AppointmentRow({ appt, viewerRole }: { appt: Appt; viewerRole: "
   const [showAgenda, setShowAgenda] = useState(false);
   const [outcome, setOutcome] = useState("");
   const [showOutcome, setShowOutcome] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const start = new Date(appt.startAtIso);
   const end = new Date(appt.endAtIso);
@@ -46,6 +47,11 @@ export function AppointmentRow({ appt, viewerRole }: { appt: Appt; viewerRole: "
 
   return (
     <div className="rounded-xl border border-border p-4">
+      {error ? (
+        <div className="mb-2 rounded-md bg-destructive/10 text-destructive px-3 py-2 text-xs font-medium">
+          {error}
+        </div>
+      ) : null}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -84,12 +90,24 @@ export function AppointmentRow({ appt, viewerRole }: { appt: Appt; viewerRole: "
           {viewerRole === "cbo" && appt.status === "PENDING" && (
             <>
               <Button size="sm" disabled={pending}
-                onClick={() => startTransition(async () => { await setAppointmentStatusAction(appt.id, "CONFIRMED"); router.refresh(); })}
+                onClick={() => {
+                  setError(null);
+                  startTransition(async () => {
+                    const r = await setAppointmentStatusAction(appt.id, "CONFIRMED");
+                    if (!r.success) { setError(r.error); return; }
+                    router.refresh();
+                  });
+                }}
               ><Check className="h-4 w-4" /> Accept</Button>
               <Button size="sm" variant="outline" disabled={pending}
                 onClick={() => {
                   const reason = prompt("Reason for declining (optional)?") || undefined;
-                  startTransition(async () => { await setAppointmentStatusAction(appt.id, "REJECTED", reason); router.refresh(); });
+                  setError(null);
+                  startTransition(async () => {
+                    const r = await setAppointmentStatusAction(appt.id, "REJECTED", reason);
+                    if (!r.success) { setError(r.error); return; }
+                    router.refresh();
+                  });
                 }}
               ><X className="h-4 w-4" /> Decline</Button>
             </>
@@ -104,9 +122,12 @@ export function AppointmentRow({ appt, viewerRole }: { appt: Appt; viewerRole: "
               onClick={() => {
                 const reason = prompt("Reason for cancelling (optional)?") || undefined;
                 if (appt.recurrence !== "NONE" && !confirm("This is a recurring meeting. Cancelling will end the series.")) return;
+                setError(null);
                 startTransition(async () => {
-                  if (appt.recurrence !== "NONE") await cancelRecurringAction(appt.id);
-                  else await setAppointmentStatusAction(appt.id, "CANCELLED", reason);
+                  const r = appt.recurrence !== "NONE"
+                    ? await cancelRecurringAction(appt.id)
+                    : await setAppointmentStatusAction(appt.id, "CANCELLED", reason);
+                  if (!r.success) { setError(r.error); return; }
                   router.refresh();
                 });
               }}
@@ -127,11 +148,15 @@ export function AppointmentRow({ appt, viewerRole }: { appt: Appt; viewerRole: "
           <div className="flex justify-end gap-2">
             <Button size="sm" variant="outline" onClick={() => setShowOutcome(false)} disabled={pending}>Cancel</Button>
             <Button size="sm" disabled={pending || !outcome.trim()}
-              onClick={() => startTransition(async () => {
-                await recordAppointmentOutcomeAction(appt.id, outcome.trim(), !!appt.interventionId);
-                setShowOutcome(false);
-                router.refresh();
-              })}
+              onClick={() => {
+                setError(null);
+                startTransition(async () => {
+                  const r = await recordAppointmentOutcomeAction(appt.id, outcome.trim(), !!appt.interventionId);
+                  if (!r.success) { setError(r.error); return; }
+                  setShowOutcome(false);
+                  router.refresh();
+                });
+              }}
             >Save outcome</Button>
           </div>
         </div>

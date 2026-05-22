@@ -18,13 +18,17 @@ type OwnerRole = { id: string; name: string };
 export function UserForm({ ownerRoles, initial }: { ownerRoles: OwnerRole[]; initial?: { id?: string; name?: string; email?: string; systemRole?: SystemRole; ownerRoleId?: string | null } }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const form = new FormData(e.currentTarget);
+    setError(null);
+    const formEl = e.currentTarget;
+    const form = new FormData(formEl);
     startTransition(async () => {
-      await upsertUserAction(form);
-      if (!initial?.id) (e.currentTarget as HTMLFormElement).reset();
+      const result = await upsertUserAction(form);
+      if (!result.success) { setError(result.error); return; }
+      if (!initial?.id) try { formEl.reset(); } catch {}
       router.refresh();
     });
   }
@@ -59,6 +63,11 @@ export function UserForm({ ownerRoles, initial }: { ownerRoles: OwnerRole[]; ini
           {ownerRoles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
         </Select>
       </div>
+      {error && (
+        <div className="sm:col-span-6 rounded-md border border-destructive/40 bg-destructive/5 p-2.5 text-xs text-destructive">
+          {error}
+        </div>
+      )}
       <div className="sm:col-span-6 flex justify-end">
         <Button type="submit" disabled={pending}>{pending ? "Saving…" : initial?.id ? "Update user" : "Add user"}</Button>
       </div>
@@ -120,22 +129,31 @@ export function UserRow({
             onClick={() => {
               if (!confirm(`Generate a temporary password for ${u.email}? Their old password will be replaced.`)) return;
               startTransition(async () => {
-                const temp = await generateTempPasswordAction(u.id);
-                setTempShown(temp);
+                const result = await generateTempPasswordAction(u.id);
+                if (!result.success) { alert(result.error); return; }
+                setTempShown(result.temp);
               });
             }}
           >
             <Key className="h-4 w-4" />
           </Button>
           <Button variant="ghost" size="sm" disabled={pending} title="Toggle active"
-            onClick={() => startTransition(async () => { await toggleUserActiveAction(u.id); router.refresh(); })}
+            onClick={() => startTransition(async () => {
+              const r = await toggleUserActiveAction(u.id);
+              if (!r.success) { alert(r.error); return; }
+              router.refresh();
+            })}
           >
             <Power className="h-4 w-4" />
           </Button>
           <Button variant="ghost" size="sm" disabled={pending} title="Delete"
             onClick={() => {
               if (!confirm(`Delete user "${u.name}"?`)) return;
-              startTransition(async () => { await deleteUserAction(u.id); router.refresh(); });
+              startTransition(async () => {
+                const r = await deleteUserAction(u.id);
+                if (!r.success) { alert(r.error); return; }
+                router.refresh();
+              });
             }}
           >
             <Trash2 className="h-4 w-4 text-destructive" />

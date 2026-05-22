@@ -29,6 +29,7 @@ export function InterventionPanel({
   const [decisionType, setDecisionType] = useState(TEMPLATES[0].type);
   const [resolutionNote, setResolutionNote] = useState(TEMPLATES[0].defaultNote);
   const [noteValue, setNoteValue] = useState(cboNote || "");
+  const [error, setError] = useState<string | null>(null);
 
   const pickTemplate = (type: string) => {
     const t = TEMPLATES.find((x) => x.type === type);
@@ -39,6 +40,11 @@ export function InterventionPanel({
 
   return (
     <div className="rounded-xl border border-warning/40 bg-warning/5 p-4">
+      {error && (
+        <div className="mb-3 rounded-md bg-destructive/10 text-destructive px-3 py-2 text-xs font-medium">
+          {error}
+        </div>
+      )}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="text-sm font-semibold text-foreground">{issue}</div>
@@ -51,7 +57,14 @@ export function InterventionPanel({
             {cboNote && <Badge variant="muted">Your note</Badge>}
             <Badge variant="warning">Decide</Badge>
             <button
-              onClick={() => startTransition(async () => { await togglePinAction("intervention", id); router.refresh(); })}
+              onClick={() => {
+                setError(null);
+                startTransition(async () => {
+                  const r = await togglePinAction("intervention", id);
+                  if (!r.success) { setError(r.error); return; }
+                  router.refresh();
+                });
+              }}
               className={`grid h-6 w-6 place-items-center rounded-md border ${pinned ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-accent"}`}
               aria-label={pinned ? "Unpin" : "Pin"}
               disabled={pending}
@@ -75,13 +88,13 @@ export function InterventionPanel({
       )}
 
       <div className="mt-3 flex flex-wrap gap-2">
-        <Button size="sm" variant="default" onClick={() => setOpen("decide")} disabled={pending}>
+        <Button size="sm" variant="default" onClick={() => { setError(null); setOpen("decide"); }} disabled={pending}>
           <Check className="h-4 w-4" /> Decide
         </Button>
-        <Button size="sm" variant="outline" onClick={() => setOpen("snooze")} disabled={pending}>
+        <Button size="sm" variant="outline" onClick={() => { setError(null); setOpen("snooze"); }} disabled={pending}>
           <Clock className="h-4 w-4" /> Snooze
         </Button>
-        <Button size="sm" variant="outline" onClick={() => setOpen("note")} disabled={pending}>
+        <Button size="sm" variant="outline" onClick={() => { setError(null); setOpen("note"); }} disabled={pending}>
           <MessageSquare className="h-4 w-4" /> {cboNote ? "Edit note" : "Drop note"}
         </Button>
       </div>
@@ -114,7 +127,8 @@ export function InterventionPanel({
           <div className="flex justify-end gap-2">
             <Button size="sm" variant="outline" onClick={() => setOpen(null)} disabled={pending}>Cancel</Button>
             <Button size="sm" disabled={pending} onClick={() => startTransition(async () => {
-              await resolveInterventionRichAction(id, decisionType, resolutionNote);
+              const r = await resolveInterventionRichAction(id, decisionType, resolutionNote);
+              if (!r.success) { setError(r.error); return; }
               setOpen(null);
               router.refresh();
             })}>{pending ? "Saving…" : "Resolve"}</Button>
@@ -139,7 +153,8 @@ export function InterventionPanel({
                 variant="outline"
                 disabled={pending}
                 onClick={() => startTransition(async () => {
-                  await snoozeInterventionAction(id, opt.h);
+                  const r = await snoozeInterventionAction(id, opt.h);
+                  if (!r.success) { setError(r.error); return; }
                   setOpen(null);
                   router.refresh();
                 })}
@@ -160,7 +175,8 @@ export function InterventionPanel({
           <div className="flex justify-end gap-2">
             <Button size="sm" variant="outline" onClick={() => setOpen(null)} disabled={pending}>Cancel</Button>
             <Button size="sm" disabled={pending} onClick={() => startTransition(async () => {
-              await setInterventionCboNoteAction(id, noteValue);
+              const r = await setInterventionCboNoteAction(id, noteValue);
+              if (!r.success) { setError(r.error); return; }
               setOpen(null);
               router.refresh();
             })}>{pending ? "Saving…" : "Save note"}</Button>

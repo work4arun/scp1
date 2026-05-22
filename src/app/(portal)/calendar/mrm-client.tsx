@@ -15,10 +15,9 @@ export function CreateMrmButton() {
       onClick={() => {
         if (!confirm("Create the standing weekly MRM with the SM (every Monday 10:00–11:00)?")) return;
         startTransition(async () => {
-          try {
-            await createMrmAction();
-            router.refresh();
-          } catch (e) { alert((e as Error).message); }
+          const r = await createMrmAction();
+          if (!r.success) { alert(r.error); return; }
+          router.refresh();
         });
       }}
     >

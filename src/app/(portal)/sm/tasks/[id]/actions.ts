@@ -5,11 +5,20 @@ import { auth } from "@/lib/auth";
 import { canManageTasks } from "@/lib/rbac";
 import { revalidatePath } from "next/cache";
 import { notifyAllCBO } from "@/lib/notify";
+import { friendlyPrismaError } from "@/lib/prisma-errors";
 import type { TaskStatus } from "@prisma/client";
 
-export async function addUpdateAction(taskId: string, formData: FormData) {
+const FORBIDDEN_MSG =
+  "Your session is no longer valid or you don't have permission for this action. Please sign in again.";
+
+export type AddUpdateResult = { success: true } | { success: false; error: string };
+export type EscalateResult = { success: true } | { success: false; error: string };
+
+export async function addUpdateAction(taskId: string, formData: FormData): Promise<AddUpdateResult> {
   const session = await auth();
-  if (!canManageTasks(session?.user.systemRole) || !session?.user.id) throw new Error("Forbidden");
+  if (!canManageTasks(session?.user.systemRole) || !session?.user.id) {
+    return { success: false, error: FORBIDDEN_MSG };
+  }
 
   const rawNote = String(formData.get("note") || "").trim();
   const newStatus = formData.get("status") as TaskStatus | "";
@@ -17,36 +26,45 @@ export async function addUpdateAction(taskId: string, formData: FormData) {
 
   // Allow status-only updates: if the user only picked a new status without
   // writing a note, auto-generate one for the audit trail.
-  if (!rawNote && !newStatus) return;
+  if (!rawNote && !newStatus) return { success: true }; // nothing to do — not an error
   const note =
     rawNote ||
     (newStatus
       ? `🔄 Status → ${String(newStatus).replace(/_/g, " ")}`
       : "");
 
-  await prisma.taskUpdate.create({
-    data: {
-      taskId,
-      authorId: session.user.id,
-      note,
-      newStatus: newStatus || null,
-    },
-  });
+  try {
+    await prisma.taskUpdate.create({
+      data: {
+        taskId,
+        authorId: session.user.id,
+        note,
+        newStatus: newStatus || null,
+      },
+    });
 
-  await prisma.task.update({
-    where: { id: taskId },
-    data: {
-      lastUpdateAt: new Date(),
-      ...(newStatus ? { status: newStatus } : {}),
-      // Persist delay reason when provided; clear it when status moves away from DELAYED
-      ...(delayReason !== null ? { delayReason } : newStatus && newStatus !== "DELAYED" ? { delayReason: null } : {}),
-    },
-  });
+    await prisma.task.update({
+      where: { id: taskId },
+      data: {
+        lastUpdateAt: new Date(),
+        ...(newStatus ? { status: newStatus } : {}),
+        // Persist delay reason when provided; clear it when status moves away from DELAYED
+        ...(delayReason !== null ? { delayReason } : newStatus && newStatus !== "DELAYED" ? { delayReason: null } : {}),
+      },
+    });
+  } catch (err) {
+    console.error("[addUpdateAction] DB error", err);
+    return {
+      success: false,
+      error: friendlyPrismaError(err) ?? "Could not save the update. Please try again.",
+    };
+  }
 
   revalidatePath(`/sm/tasks/${taskId}`);
   revalidatePath("/sm");
   revalidatePath("/sm/tasks");
 
+  // notifyAllCBO swallows its own errors — no try/catch needed.
   // Notify CBO only on a status change (not every comment) to avoid noise
   if (newStatus) {
     const t = await prisma.task.findUnique({ where: { id: taskId }, include: { vertical: true } });
@@ -61,45 +79,61 @@ export async function addUpdateAction(taskId: string, formData: FormData) {
       });
     }
   }
+
+  return { success: true };
 }
 
-export async function escalateTaskAction(taskId: string, formData: FormData) {
+export async function escalateTaskAction(taskId: string, formData: FormData): Promise<EscalateResult> {
   const session = await auth();
-  if (!canManageTasks(session?.user.systemRole) || !session?.user.id) throw new Error("Forbidden");
+  if (!canManageTasks(session?.user.systemRole) || !session?.user.id) {
+    return { success: false, error: FORBIDDEN_MSG };
+  }
 
   const issue = String(formData.get("issue") || "").trim();
   const whyNeeded = String(formData.get("whyNeeded") || "").trim();
   const decisionRequired = String(formData.get("decisionRequired") || "").trim();
   const deadlineStr = String(formData.get("deadline") || "").trim();
   const noteAttached = formData.get("noteAttached") === "on";
-  if (!issue || !whyNeeded || !decisionRequired) return;
+
+  if (!issue || !whyNeeded || !decisionRequired) {
+    return { success: false, error: "Issue, reason, and decision required fields must all be filled in." };
+  }
 
   const task = await prisma.task.findUnique({ where: { id: taskId }, select: { verticalId: true } });
-  if (!task) throw new Error("Task not found");
+  if (!task) return { success: false, error: "Task not found — it may have been deleted. Please refresh." };
 
-  await prisma.intervention.create({
-    data: {
-      taskId,
-      verticalId: task.verticalId,
-      issue,
-      whyNeeded,
-      decisionRequired,
-      deadline: deadlineStr ? new Date(deadlineStr) : null,
-      noteAttached,
-      raisedById: session.user.id,
-    },
-  });
+  try {
+    await prisma.intervention.create({
+      data: {
+        taskId,
+        verticalId: task.verticalId,
+        issue,
+        whyNeeded,
+        decisionRequired,
+        deadline: deadlineStr ? new Date(deadlineStr) : null,
+        noteAttached,
+        raisedById: session.user.id,
+      },
+    });
 
-  await prisma.task.update({
-    where: { id: taskId },
-    data: { intervention: "YES" },
-  });
+    await prisma.task.update({
+      where: { id: taskId },
+      data: { intervention: "YES" },
+    });
+  } catch (err) {
+    console.error("[escalateTaskAction] DB error", err);
+    return {
+      success: false,
+      error: friendlyPrismaError(err) ?? "Could not submit the escalation. Please try again.",
+    };
+  }
 
   revalidatePath(`/sm/tasks/${taskId}`);
   revalidatePath("/sm/intervention");
   revalidatePath("/cbo");
   revalidatePath("/cbo/intervention");
 
+  // notifyAllCBO swallows its own errors.
   await notifyAllCBO({
     kind: "task.escalated",
     title: "🚨 New escalation",
@@ -108,4 +142,6 @@ export async function escalateTaskAction(taskId: string, formData: FormData) {
     refId: taskId,
     senderId: session.user.id,
   });
+
+  return { success: true };
 }

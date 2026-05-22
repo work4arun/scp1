@@ -13,13 +13,17 @@ import { moveVerticalAction } from "../actions";
 export function VerticalForm({ initial }: { initial?: { id?: string; code?: string; name?: string; description?: string | null; colorHex?: string; sortOrder?: number } }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const form = new FormData(e.currentTarget);
+    setError(null);
+    const formEl = e.currentTarget;
+    const form = new FormData(formEl);
     startTransition(async () => {
-      await upsertVerticalAction(form);
-      if (!initial?.id) (e.currentTarget as HTMLFormElement).reset();
+      const result = await upsertVerticalAction(form);
+      if (!result.success) { setError(result.error); return; }
+      if (!initial?.id) try { formEl.reset(); } catch {}
       router.refresh();
     });
   }
@@ -47,6 +51,11 @@ export function VerticalForm({ initial }: { initial?: { id?: string; code?: stri
         <Label htmlFor="description">Description</Label>
         <Input id="description" name="description" placeholder="Short purpose" defaultValue={initial?.description || ""} />
       </div>
+      {error && (
+        <div className="sm:col-span-6 rounded-md border border-destructive/40 bg-destructive/5 p-2.5 text-xs text-destructive">
+          {error}
+        </div>
+      )}
       <div className="sm:col-span-6 flex justify-end">
         <Button type="submit" disabled={pending}>{pending ? "Saving…" : initial?.id ? "Update vertical" : "Add vertical"}</Button>
       </div>
@@ -87,18 +96,40 @@ export function VerticalRow({
       </div>
       <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
         <Badge variant={v.active ? "success" : "muted"}>{v.active ? "Active" : "Hidden"}</Badge>
-        <Button variant="ghost" size="sm" disabled={pending} onClick={() => startTransition(async () => { await moveVerticalAction(v.id, "up"); router.refresh(); })} title="Move up"><ArrowUp className="h-4 w-4" /></Button>
-        <Button variant="ghost" size="sm" disabled={pending} onClick={() => startTransition(async () => { await moveVerticalAction(v.id, "down"); router.refresh(); })} title="Move down"><ArrowDown className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="sm" disabled={pending}
+          onClick={() => startTransition(async () => {
+            const r = await moveVerticalAction(v.id, "up");
+            if (!r.success) { alert(r.error); return; }
+            router.refresh();
+          })}
+          title="Move up"
+        ><ArrowUp className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="sm" disabled={pending}
+          onClick={() => startTransition(async () => {
+            const r = await moveVerticalAction(v.id, "down");
+            if (!r.success) { alert(r.error); return; }
+            router.refresh();
+          })}
+          title="Move down"
+        ><ArrowDown className="h-4 w-4" /></Button>
         <Button variant="ghost" size="sm" onClick={() => setEditing(true)} title="Edit"><Edit2 className="h-4 w-4" /></Button>
         <Button variant="ghost" size="sm" disabled={pending} title="Toggle active"
-          onClick={() => startTransition(async () => { await toggleVerticalActiveAction(v.id); router.refresh(); })}
+          onClick={() => startTransition(async () => {
+            const r = await toggleVerticalActiveAction(v.id);
+            if (!r.success) { alert(r.error); return; }
+            router.refresh();
+          })}
         >
           <Save className="h-4 w-4" />
         </Button>
         <Button variant="ghost" size="sm" disabled={pending || v.taskCount > 0} title="Delete"
           onClick={() => {
             if (!confirm(`Delete vertical "${v.name}"? This cannot be undone.`)) return;
-            startTransition(async () => { await deleteVerticalAction(v.id); router.refresh(); });
+            startTransition(async () => {
+              const r = await deleteVerticalAction(v.id);
+              if (!r.success) { alert(r.error); return; }
+              router.refresh();
+            });
           }}
         >
           <Trash2 className="h-4 w-4 text-destructive" />

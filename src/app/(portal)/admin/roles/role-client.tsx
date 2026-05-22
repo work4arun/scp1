@@ -168,7 +168,11 @@ export function OwnerRoleRow({
                 disabled={pending}
                 onClick={() => {
                   if (!confirm(`Clear the owner contact for "${r.name}"?\n\nThis just removes the name + email — it does not affect any logins.`)) return;
-                  startTransition(async () => { await clearRoleOwnerContactAction(r.id); router.refresh(); });
+                  startTransition(async () => {
+                    const res = await clearRoleOwnerContactAction(r.id);
+                    if (!res.ok) { alert(res.error); return; }
+                    router.refresh();
+                  });
                 }}
                 aria-label="Clear owner contact"
               >

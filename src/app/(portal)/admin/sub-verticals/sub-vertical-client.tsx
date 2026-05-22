@@ -15,13 +15,17 @@ type Vertical = { id: string; name: string };
 export function SubVerticalForm({ verticals, initial }: { verticals: Vertical[]; initial?: { id?: string; verticalId?: string; name?: string; sortOrder?: number } }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const form = new FormData(e.currentTarget);
+    setError(null);
+    const formEl = e.currentTarget;
+    const form = new FormData(formEl);
     startTransition(async () => {
-      await upsertSubVerticalAction(form);
-      if (!initial?.id) (e.currentTarget as HTMLFormElement).reset();
+      const result = await upsertSubVerticalAction(form);
+      if (!result.success) { setError(result.error); return; }
+      if (!initial?.id) try { formEl.reset(); } catch {}
       router.refresh();
     });
   }
@@ -43,6 +47,11 @@ export function SubVerticalForm({ verticals, initial }: { verticals: Vertical[];
         <Label htmlFor="sortOrder">Order</Label>
         <Input id="sortOrder" name="sortOrder" type="number" defaultValue={initial?.sortOrder ?? 0} />
       </div>
+      {error && (
+        <div className="sm:col-span-6 rounded-md border border-destructive/40 bg-destructive/5 p-2.5 text-xs text-destructive">
+          {error}
+        </div>
+      )}
       <div className="sm:col-span-6 flex justify-end">
         <Button type="submit" disabled={pending}>{pending ? "Saving…" : initial?.id ? "Update" : "Add sub-vertical"}</Button>
       </div>
@@ -87,7 +96,11 @@ export function SubVerticalRow({
           disabled={pending || s.taskCount > 0}
           onClick={() => {
             if (!confirm(`Delete sub-vertical "${s.name}"?`)) return;
-            startTransition(async () => { await deleteSubVerticalAction(s.id); router.refresh(); });
+            startTransition(async () => {
+              const result = await deleteSubVerticalAction(s.id);
+              if (!result.success) { alert(result.error); return; }
+              router.refresh();
+            });
           }}
         >
           <Trash2 className="h-4 w-4 text-destructive" />

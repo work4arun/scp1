@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { canManageTasks, canConfigureSystem } from "@/lib/rbac";
 import { revalidatePath } from "next/cache";
-import type { TaskSource, InterventionFlag, TaskStatus } from "@prisma/client";
+import type { TaskSource, InterventionFlag, TaskStatus, SystemRole } from "@prisma/client";
 import { sendTaskEmailToOwners } from "@/lib/email";
 import { notifyAllCBO } from "@/lib/notify";
 import { writeAudit } from "@/lib/audit";
@@ -39,18 +39,25 @@ export type BulkUpdateResult = { success: false; error: string } | { success: tr
 const FORBIDDEN_MSG =
   "Your session is no longer valid or you don't have permission for this action. Please sign in again.";
 
-type Authed = { ok: true; userId: string } | { ok: false; error: string };
+type Authed =
+  | { ok: true; userId: string; userName: string; systemRole: SystemRole }
+  | { ok: false; error: string };
+
 async function checkSm(): Promise<Authed> {
   const session = await auth();
   if (!canManageTasks(session?.user.systemRole) || !session?.user.id) {
     return { ok: false, error: FORBIDDEN_MSG };
   }
-  return { ok: true, userId: session.user.id };
+  return {
+    ok: true,
+    userId: session.user.id,
+    userName: session.user.name || "Strategic Manager",
+    systemRole: session.user.systemRole as SystemRole,
+  };
 }
 
 // ────────── EDIT ──────────
 export async function updateTaskAction(taskId: string, formData: FormData): Promise<UpdateTaskResult> {
-  const session = await auth();
   const authed = await checkSm();
   if (!authed.ok) return { success: false, error: authed.error };
   const userId = authed.userId;
@@ -177,7 +184,7 @@ export async function updateTaskAction(taskId: string, formData: FormData): Prom
   revalidatePath("/cbo");
 
   // ── Email notifications ──
-  const updaterName = session?.user.name || "Strategic Manager";
+  const updaterName = authed.userName;
   const changedSummary = diffs.join("\n");
 
   const taskDeadline = deadlineStr || (existing.deadline ? existing.deadline.toISOString().slice(0, 10) : null);
@@ -213,7 +220,7 @@ export async function updateTaskAction(taskId: string, formData: FormData): Prom
       verticalName: existing.vertical.name,
       priorityLabel,
       deadline: taskDeadline,
-      eventType: "unassigned" as "updated",   // reuse "updated" event type
+      eventType: "updated",
       updatedByName: updaterName,
       changedSummary: "You have been removed as owner of this task.",
     });
@@ -290,7 +297,6 @@ export async function softDeleteTaskAction(
   const authed = await checkSm();
   if (!authed.ok) return { success: false, error: authed.error };
   const userId = authed.userId;
-  const session = await auth();
 
   const task = await prisma.task.findUnique({
     where: { id: taskId },
@@ -301,7 +307,7 @@ export async function softDeleteTaskAction(
   }
 
   // Block delete if there's an open escalation — unless Super Admin
-  if (task.interventions.length > 0 && !canConfigureSystem(session?.user.systemRole)) {
+  if (task.interventions.length > 0 && !canConfigureSystem(authed.systemRole)) {
     return {
       success: false,
       error: "This task has an open escalation to Dr. BN. Resolve the intervention first, or ask Super Admin to delete.",
@@ -446,12 +452,11 @@ export async function bulkUpdateAction(
       error: "Bulk actions are disabled. Ask a Super Admin to enable the 'task_bulk_actions' flag at /admin/features.",
     };
   }
-  const session = await auth();
 
   try {
     if (patch.action === "drop") {
       // Block delete on any task with open escalation (unless super admin)
-      if (!canConfigureSystem(session?.user.systemRole)) {
+      if (!canConfigureSystem(authed.systemRole)) {
         const blocked = await prisma.task.count({
           where: { id: { in: ids }, interventions: { some: { resolved: false } } },
         });
