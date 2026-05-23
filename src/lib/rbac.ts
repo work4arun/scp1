@@ -19,7 +19,7 @@ export function canManageTasks(role?: SystemRole | null) {
 }
 
 export function canConfigureSystem(role?: SystemRole | null) {
-  return role === "SUPER_ADMIN";
+  return role === "SUPER_ADMIN" || role === "SM";
 }
 
 export function homePathForRole(role?: SystemRole | null) {

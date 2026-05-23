@@ -31,45 +31,62 @@ import { NotificationBell } from "@/components/notification-bell";
 import { DarkModeToggle } from "@/components/dark-mode-toggle";
 
 type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }> };
+type NavSection = { label: string; items: NavItem[] };
 
-function navItemsFor(role: SystemRole): NavItem[] {
+const ADMIN_NAV_ITEMS: NavItem[] = [
+  { href: "/admin", label: "Overview", icon: LayoutDashboard },
+  { href: "/admin/verticals", label: "Verticals", icon: Layers },
+  { href: "/admin/sub-verticals", label: "Sub-Verticals", icon: Layers },
+  { href: "/admin/priorities", label: "Priorities", icon: Tags },
+  { href: "/admin/roles", label: "Owner Roles", icon: Users },
+  { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/tasks", label: "All Tasks", icon: ListChecks },
+  { href: "/admin/audit", label: "Audit Log", icon: History },
+  { href: "/admin/features", label: "Feature Flags", icon: ToggleLeft },
+  { href: "/admin/backup", label: "Backup & Restore", icon: Database },
+];
+
+function navSectionsFor(role: SystemRole): NavSection[] {
   if (role === "SUPER_ADMIN") {
-    return [
-      { href: "/admin", label: "Overview", icon: LayoutDashboard },
-      { href: "/admin/verticals", label: "Verticals", icon: Layers },
-      { href: "/admin/sub-verticals", label: "Sub-Verticals", icon: Layers },
-      { href: "/admin/priorities", label: "Priorities", icon: Tags },
-      { href: "/admin/roles", label: "Owner Roles", icon: Users },
-      { href: "/admin/users", label: "Users", icon: Users },
-      { href: "/admin/tasks", label: "All Tasks", icon: ListChecks },
-      { href: "/admin/audit", label: "Audit Log", icon: History },
-      { href: "/admin/features", label: "Feature Flags", icon: ToggleLeft },
-      { href: "/admin/backup", label: "Backup & Restore", icon: Database },
-    ];
+    return [{ label: "Super Admin", items: ADMIN_NAV_ITEMS }];
   }
   if (role === "CBO") {
-    return [
-      { href: "/cbo", label: "Master Dashboard", icon: LayoutDashboard },
-      { href: "/cbo/daily", label: "Today's Summary", icon: Calendar },
-      { href: "/cbo/weekly", label: "Weekly Review", icon: Sparkles },
-      { href: "/cbo/intervention", label: "My Decisions", icon: AlertTriangle },
-      { href: "/calendar", label: "Calendar", icon: Calendar },
-      { href: "/cbo/parking", label: "Parking Lot", icon: Archive },
-      { href: "/cbo/verticals", label: "Verticals", icon: Building2 },
-      { href: "/cbo/notes", label: "Notes", icon: StickyNote },
-    ];
+    return [{
+      label: "Chief Business Officer",
+      items: [
+        { href: "/cbo", label: "Master Dashboard", icon: LayoutDashboard },
+        { href: "/cbo/daily", label: "Today's Summary", icon: Calendar },
+        { href: "/cbo/weekly", label: "Weekly Review", icon: Sparkles },
+        { href: "/cbo/intervention", label: "My Decisions", icon: AlertTriangle },
+        { href: "/calendar", label: "Calendar", icon: Calendar },
+        { href: "/cbo/parking", label: "Parking Lot", icon: Archive },
+        { href: "/cbo/verticals", label: "Verticals", icon: Building2 },
+        { href: "/cbo/notes", label: "Notes", icon: StickyNote },
+      ],
+    }];
   }
-  // SM
+  // SM — own section + admin section
   return [
-    { href: "/sm", label: "Today", icon: LayoutDashboard },
-    { href: "/sm/tasks", label: "Tasks", icon: ListChecks },
-    { href: "/sm/new-task", label: "New Task", icon: Inbox },
-    { href: "/sm/boss", label: "Boss Register", icon: Inbox },
-    { href: "/sm/intervention", label: "Escalations", icon: AlertTriangle },
-    { href: "/sm/notes", label: "Notes from CBO", icon: StickyNote },
-    { href: "/calendar", label: "Calendar", icon: Calendar },
-    { href: "/sm/parking", label: "Parking Lot", icon: Archive },
+    {
+      label: "Strategic Manager",
+      items: [
+        { href: "/sm", label: "Today", icon: LayoutDashboard },
+        { href: "/sm/tasks", label: "Tasks", icon: ListChecks },
+        { href: "/sm/new-task", label: "New Task", icon: Inbox },
+        { href: "/sm/boss", label: "Boss Register", icon: Inbox },
+        { href: "/sm/intervention", label: "Escalations", icon: AlertTriangle },
+        { href: "/sm/notes", label: "Notes from CBO", icon: StickyNote },
+        { href: "/calendar", label: "Calendar", icon: Calendar },
+        { href: "/sm/parking", label: "Parking Lot", icon: Archive },
+      ],
+    },
+    { label: "Admin", items: ADMIN_NAV_ITEMS },
   ];
+}
+
+// Flat list of all items for a role (used where a single flat list is needed)
+function navItemsFor(role: SystemRole): NavItem[] {
+  return navSectionsFor(role).flatMap((s) => s.items);
 }
 
 function bottomNavFor(role: SystemRole): NavItem[] {
@@ -113,7 +130,7 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const items = navItemsFor(role);
+  const sections = navSectionsFor(role);
   const bottomItems = bottomNavFor(role);
 
   const close = () => setOpen(false);
@@ -154,14 +171,18 @@ export function AppShell({
             <NotificationBell enabled={role === "CBO" || role === "SUPER_ADMIN"} />
           </div>
           <nav className="flex-1 overflow-y-auto px-3 pb-4">
-            <SectionLabel>{ROLE_LABELS[role]}</SectionLabel>
-            <ul className="space-y-1">
-              {items.map((item) => (
-                <li key={item.href}>
-                  <NavLink item={item} pathname={pathname} onClick={close} />
-                </li>
-              ))}
-            </ul>
+            {sections.map((section) => (
+              <div key={section.label}>
+                <SectionLabel>{section.label}</SectionLabel>
+                <ul className="space-y-1">
+                  {section.items.map((item) => (
+                    <li key={item.href}>
+                      <NavLink item={item} pathname={pathname} onClick={close} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </nav>
           <div className="border-t border-border p-4">
             <div className="flex items-start justify-between gap-2">
@@ -194,14 +215,18 @@ export function AppShell({
                 </button>
               </div>
               <nav className="flex-1 overflow-y-auto px-3 py-3">
-                <SectionLabel>{ROLE_LABELS[role]}</SectionLabel>
-                <ul className="space-y-1">
-                  {items.map((item) => (
-                    <li key={item.href}>
-                      <NavLink item={item} pathname={pathname} onClick={close} />
-                    </li>
-                  ))}
-                </ul>
+                {sections.map((section) => (
+                  <div key={section.label}>
+                    <SectionLabel>{section.label}</SectionLabel>
+                    <ul className="space-y-1">
+                      {section.items.map((item) => (
+                        <li key={item.href}>
+                          <NavLink item={item} pathname={pathname} onClick={close} />
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
               </nav>
               <div className="border-t border-border p-4">
                 <div className="text-xs font-semibold">{userName}</div>
