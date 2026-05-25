@@ -17,7 +17,7 @@ import { isEnabled } from "@/lib/features";
 export default async function SmTasks({
   searchParams,
 }: {
-  searchParams: { vertical?: string; priority?: string; status?: string; q?: string; page?: string; dateType?: string; dateValue?: string };
+  searchParams: { vertical?: string; priority?: string; status?: string; q?: string; page?: string; dateType?: string; dateValue?: string; dateFrom?: string; dateTo?: string };
 }) {
   const session = await auth();
   if (!canManageTasks(session?.user.systemRole)) redirect("/");
@@ -30,8 +30,26 @@ export default async function SmTasks({
   if (searchParams.status) where.status = searchParams.status as TaskStatus;
   if (searchParams.q) where.title = { contains: searchParams.q, mode: "insensitive" };
 
-  // Exact-date filter — both params required, value must be YYYY-MM-DD
-  if (searchParams.dateType && searchParams.dateValue && /^\d{4}-\d{2}-\d{2}$/.test(searchParams.dateValue)) {
+  const ISO = /^\d{4}-\d{2}-\d{2}$/;
+  const hasFrom = searchParams.dateFrom && ISO.test(searchParams.dateFrom);
+  const hasTo   = searchParams.dateTo   && ISO.test(searchParams.dateTo);
+
+  if (searchParams.dateType && (hasFrom || hasTo)) {
+    // Date range filter — takes priority over exact picker
+    const rangeFilter: { gte?: Date; lt?: Date } = {};
+    if (hasFrom) rangeFilter.gte = new Date(`${searchParams.dateFrom}T00:00:00.000Z`);
+    if (hasTo) {
+      const toEnd = new Date(`${searchParams.dateTo}T00:00:00.000Z`);
+      toEnd.setUTCDate(toEnd.getUTCDate() + 1);
+      rangeFilter.lt = toEnd;
+    }
+    if (searchParams.dateType === "assigned") {
+      where.createdAt = rangeFilter;
+    } else if (searchParams.dateType === "deadline_exact") {
+      where.deadline = rangeFilter;
+    }
+  } else if (searchParams.dateType && searchParams.dateValue && ISO.test(searchParams.dateValue)) {
+    // Exact-date filter — single day
     const dayStart = new Date(`${searchParams.dateValue}T00:00:00.000Z`);
     const dayEnd   = new Date(`${searchParams.dateValue}T00:00:00.000Z`);
     dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
@@ -79,8 +97,10 @@ export default async function SmTasks({
   if (searchParams.priority) queryString.set("priority", searchParams.priority);
   if (searchParams.status) queryString.set("status", searchParams.status);
   if (searchParams.q) queryString.set("q", searchParams.q);
-  if (searchParams.dateType) queryString.set("dateType", searchParams.dateType);
+  if (searchParams.dateType)  queryString.set("dateType",  searchParams.dateType);
   if (searchParams.dateValue) queryString.set("dateValue", searchParams.dateValue);
+  if (searchParams.dateFrom)  queryString.set("dateFrom",  searchParams.dateFrom);
+  if (searchParams.dateTo)    queryString.set("dateTo",    searchParams.dateTo);
   const baseQs = queryString.toString();
 
   const rows = tasks.map((t) => ({
@@ -157,26 +177,37 @@ export default async function SmTasks({
               </div>
             </div>
 
-            {/* Date filter row */}
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 items-end rounded-lg border border-dashed border-border bg-muted/30 p-3">
-              <div className="space-y-1">
-                <Label>Filter by date</Label>
-                <Select name="dateType" defaultValue={searchParams.dateType || ""}>
-                  <option value="">— Select type —</option>
-                  <option value="assigned">Assigned Date</option>
-                  <option value="deadline_exact">Deadline Date</option>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label>Pick a date</Label>
-                <Input name="dateValue" type="date" defaultValue={searchParams.dateValue || ""} />
-              </div>
-              {searchParams.dateType && searchParams.dateValue && (
-                <div className="col-span-2 text-xs text-muted-foreground self-end pb-1">
-                  Showing tasks where {searchParams.dateType === "assigned" ? "assigned on" : "deadline is"}{" "}
-                  <span className="font-semibold text-foreground">{searchParams.dateValue}</span>
+            {/* Date filter row — exact date + date range */}
+            <div className="rounded-lg border border-dashed border-border bg-muted/30 p-3 space-y-2">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                <div className="space-y-1">
+                  <Label>Filter by date</Label>
+                  <Select name="dateType" defaultValue={searchParams.dateType || ""}>
+                    <option value="">— Select type —</option>
+                    <option value="assigned">Assigned Date</option>
+                    <option value="deadline_exact">Deadline Date</option>
+                  </Select>
                 </div>
-              )}
+                <div className="space-y-1">
+                  <Label>Pick a date</Label>
+                  <Input name="dateValue" type="date" defaultValue={searchParams.dateValue || ""} />
+                </div>
+                <div className="space-y-1">
+                  <Label>From date</Label>
+                  <Input name="dateFrom" type="date" defaultValue={searchParams.dateFrom || ""} />
+                </div>
+                <div className="space-y-1">
+                  <Label>To date</Label>
+                  <Input name="dateTo" type="date" defaultValue={searchParams.dateTo || ""} />
+                </div>
+                <div className="text-xs text-muted-foreground self-end pb-1">
+                  {searchParams.dateType && (searchParams.dateFrom || searchParams.dateTo)
+                    ? <>Range: <span className="font-semibold text-foreground">{searchParams.dateFrom || "any"}</span>{" → "}<span className="font-semibold text-foreground">{searchParams.dateTo || "any"}</span></>
+                    : searchParams.dateType && searchParams.dateValue
+                    ? <>Exact: <span className="font-semibold text-foreground">{searchParams.dateValue}</span></>
+                    : "Select type, then a date or range"}
+                </div>
+              </div>
             </div>
 
             <div className="flex justify-end gap-2">

@@ -6,8 +6,9 @@ import { auth } from "@/lib/auth";
 import { canManageTasks } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { isEnabled } from "@/lib/features";
-import type { TaskStatus, Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { writeAudit } from "@/lib/audit";
+import { buildTaskWhere } from "@/app/(portal)/cbo/task-filter-utils";
 
 function csvEscape(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -29,15 +30,31 @@ export async function GET(req: Request) {
   }
 
   const url = new URL(req.url);
-  const where: Prisma.TaskWhereInput = { status: { not: "DROPPED" } };
-  const vertical = url.searchParams.get("vertical");
-  const priority = url.searchParams.get("priority");
-  const status = url.searchParams.get("status");
-  const q = url.searchParams.get("q");
-  if (vertical) where.vertical = { code: vertical };
-  if (priority) where.priority = { code: priority };
-  if (status) where.status = status as TaskStatus;
-  if (q) where.title = { contains: q, mode: "insensitive" };
+  const sp = url.searchParams;
+
+  // Re-use the same shared filter builder as /sm/tasks and /cbo so that all
+  // filter dimensions (including date range) are honoured identically.
+  const filterWhere = buildTaskWhere({
+    q:            sp.get("q")           ?? undefined,
+    vertical:     sp.get("vertical")    ?? undefined,
+    subVertical:  sp.get("subVertical") ?? undefined,
+    priority:     sp.get("priority")    ?? undefined,
+    status:       sp.get("status")      ?? undefined,
+    ownerRole:    sp.get("ownerRole")   ?? undefined,
+    ownerUser:    sp.get("ownerUser")   ?? undefined,
+    source:       sp.get("source")      ?? undefined,
+    intervention: sp.get("intervention")?? undefined,
+    deadline:     sp.get("deadline")    ?? undefined,
+    dateType:     sp.get("dateType")    ?? undefined,
+    dateValue:    sp.get("dateValue")   ?? undefined,
+    dateFrom:     sp.get("dateFrom")    ?? undefined,
+    dateTo:       sp.get("dateTo")      ?? undefined,
+  });
+
+  // Always exclude DROPPED tasks unless a specific status filter was applied.
+  const where: Prisma.TaskWhereInput = sp.get("status")
+    ? filterWhere
+    : { ...filterWhere, status: { not: "DROPPED" } };
 
   const tasks = await prisma.task.findMany({
     where,
@@ -98,7 +115,10 @@ export async function GET(req: Request) {
     actorId: session.user.id,
     action: "task.export_csv",
     entity: "Task",
-    after: { count: tasks.length, filters: { vertical, priority, status, q } },
+    after: {
+      count: tasks.length,
+      filters: Object.fromEntries([...sp.entries()]),
+    },
     note: `Exported ${tasks.length} task(s) as CSV`,
   });
 

@@ -192,33 +192,68 @@ export function TaskFilterBar({
             </SelectField>
           </div>
 
-          {/* Row 4 — Exact date filter (Assigned Date / Deadline Date + date picker) */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-5 items-end rounded-lg border border-dashed border-border bg-muted/30 p-3">
-            <div className="sm:col-span-1">
-              <Label htmlFor="f-datetype" className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                Filter by date
-              </Label>
-              <Select id="f-datetype" name="dateType" defaultValue={active.dateType ?? ""}>
-                <option value="">— Select type —</option>
-                <option value="assigned">Assigned Date</option>
-                <option value="deadline_exact">Deadline Date</option>
-              </Select>
-            </div>
-            <div className="sm:col-span-1">
-              <Label htmlFor="f-datevalue" className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                Pick a date
-              </Label>
-              <Input
-                id="f-datevalue"
-                name="dateValue"
-                type="date"
-                defaultValue={active.dateValue ?? ""}
-              />
-            </div>
-            <div className="sm:col-span-1 text-xs text-muted-foreground self-end pb-1">
-              {active.dateType && active.dateValue
-                ? `Showing tasks where ${active.dateType === "assigned" ? "assigned on" : "deadline is"} ${active.dateValue}`
-                : "Select a type and date, then click Apply filters"}
+          {/* Row 4 — Date filters (Exact date + Date range) */}
+          <div className="rounded-lg border border-dashed border-border bg-muted/30 p-3 space-y-3">
+            {/* Date type selector — shared by both exact and range modes */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              <div className="sm:col-span-1">
+                <Label htmlFor="f-datetype" className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Filter by date
+                </Label>
+                <Select id="f-datetype" name="dateType" defaultValue={active.dateType ?? ""}>
+                  <option value="">— Select type —</option>
+                  <option value="assigned">Assigned Date</option>
+                  <option value="deadline_exact">Deadline Date</option>
+                </Select>
+              </div>
+
+              {/* Exact date picker */}
+              <div className="sm:col-span-1">
+                <Label htmlFor="f-datevalue" className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Pick a date
+                </Label>
+                <Input
+                  id="f-datevalue"
+                  name="dateValue"
+                  type="date"
+                  defaultValue={active.dateValue ?? ""}
+                />
+              </div>
+
+              {/* Date range — From */}
+              <div className="sm:col-span-1">
+                <Label htmlFor="f-datefrom" className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  From date
+                </Label>
+                <Input
+                  id="f-datefrom"
+                  name="dateFrom"
+                  type="date"
+                  defaultValue={active.dateFrom ?? ""}
+                />
+              </div>
+
+              {/* Date range — To */}
+              <div className="sm:col-span-1">
+                <Label htmlFor="f-dateto" className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  To date
+                </Label>
+                <Input
+                  id="f-dateto"
+                  name="dateTo"
+                  type="date"
+                  defaultValue={active.dateTo ?? ""}
+                />
+              </div>
+
+              {/* Active hint */}
+              <div className="sm:col-span-1 text-xs text-muted-foreground self-end pb-1">
+                {active.dateType && (active.dateFrom || active.dateTo)
+                  ? `Range: ${active.dateFrom || "any"} → ${active.dateTo || "any"}`
+                  : active.dateType && active.dateValue
+                  ? `Exact: ${active.dateValue}`
+                  : "Select type, then pick a date or range"}
+              </div>
             </div>
           </div>
 
@@ -343,7 +378,28 @@ function activePills(active: TaskFilterParams, data: FilterRefData): Pill[] {
     const do_ = DEADLINE_OPTIONS.find((x) => x.value === active.deadline);
     out.push({ key: "deadline", dim: "Deadline", label: do_ ? do_.label : active.deadline, removeHref: without("deadline") });
   }
-  if (active.dateType && active.dateValue) {
+  // Date range pill — shown when From or To is set
+  if (active.dateType && (active.dateFrom || active.dateTo)) {
+    const typeLabel = active.dateType === "assigned" ? "Assigned" : "Deadline";
+    const rangeLabel = `${active.dateFrom || "any"} → ${active.dateTo || "any"}`;
+    out.push({
+      key: "dateRange",
+      dim: typeLabel,
+      label: rangeLabel,
+      removeHref: (base, a) => {
+        const usp = new URLSearchParams();
+        for (const [k, v] of Object.entries(a)) {
+          if (k === "dateType" || k === "dateFrom" || k === "dateTo" || !v) continue;
+          usp.set(k, String(v));
+        }
+        const qs = usp.toString();
+        return qs ? `${base}?${qs}` : base;
+      },
+    });
+  }
+
+  // Exact date pill — shown only when range is NOT active
+  if (active.dateType && active.dateValue && !active.dateFrom && !active.dateTo) {
     const typeLabel = active.dateType === "assigned" ? "Assigned Date" : "Deadline Date";
     out.push({
       key: "dateFilter",
