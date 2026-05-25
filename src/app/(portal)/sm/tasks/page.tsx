@@ -17,7 +17,7 @@ import { isEnabled } from "@/lib/features";
 export default async function SmTasks({
   searchParams,
 }: {
-  searchParams: { vertical?: string; priority?: string; status?: string; q?: string; page?: string };
+  searchParams: { vertical?: string; priority?: string; status?: string; q?: string; page?: string; dateType?: string; dateValue?: string };
 }) {
   const session = await auth();
   if (!canManageTasks(session?.user.systemRole)) redirect("/");
@@ -29,6 +29,18 @@ export default async function SmTasks({
   if (searchParams.priority) where.priority = { code: searchParams.priority };
   if (searchParams.status) where.status = searchParams.status as TaskStatus;
   if (searchParams.q) where.title = { contains: searchParams.q, mode: "insensitive" };
+
+  // Exact-date filter — both params required, value must be YYYY-MM-DD
+  if (searchParams.dateType && searchParams.dateValue && /^\d{4}-\d{2}-\d{2}$/.test(searchParams.dateValue)) {
+    const dayStart = new Date(`${searchParams.dateValue}T00:00:00.000Z`);
+    const dayEnd   = new Date(`${searchParams.dateValue}T00:00:00.000Z`);
+    dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+    if (searchParams.dateType === "assigned") {
+      where.createdAt = { gte: dayStart, lt: dayEnd };
+    } else if (searchParams.dateType === "deadline_exact") {
+      where.deadline = { gte: dayStart, lt: dayEnd };
+    }
+  }
 
   // Feature flags
   const [paginationEnabled, bulkActionsEnabled, csvEnabled, dropReasonEnabled] = await Promise.all([
@@ -67,6 +79,8 @@ export default async function SmTasks({
   if (searchParams.priority) queryString.set("priority", searchParams.priority);
   if (searchParams.status) queryString.set("status", searchParams.status);
   if (searchParams.q) queryString.set("q", searchParams.q);
+  if (searchParams.dateType) queryString.set("dateType", searchParams.dateType);
+  if (searchParams.dateValue) queryString.set("dateValue", searchParams.dateValue);
   const baseQs = queryString.toString();
 
   const rows = tasks.map((t) => ({
@@ -107,40 +121,65 @@ export default async function SmTasks({
       />
 
       <Card>
-        <CardContent className="p-4">
-          <form className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div className="space-y-1">
-              <Label>Search</Label>
-              <Input name="q" defaultValue={searchParams.q || ""} placeholder="Title…" />
+        <CardContent className="p-4 space-y-3">
+          <form className="space-y-3">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="space-y-1">
+                <Label>Search</Label>
+                <Input name="q" defaultValue={searchParams.q || ""} placeholder="Title…" />
+              </div>
+              <div className="space-y-1">
+                <Label>Vertical</Label>
+                <Select name="vertical" defaultValue={searchParams.vertical || ""}>
+                  <option value="">All</option>
+                  {verticals.map((v) => <option key={v.id} value={v.code}>{v.name}</option>)}
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Priority</Label>
+                <Select name="priority" defaultValue={searchParams.priority || ""}>
+                  <option value="">All</option>
+                  {priorities.map((p) => <option key={p.id} value={p.code}>{p.code} — {p.label}</option>)}
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Status</Label>
+                <Select name="status" defaultValue={searchParams.status || ""}>
+                  <option value="">All (active)</option>
+                  <option value="NOT_STARTED">Not Started</option>
+                  <option value="IN_PROGRESS">In Progress</option>
+                  <option value="WAITING_FOR_INPUT">Waiting Input</option>
+                  <option value="WAITING_FOR_APPROVAL">Waiting Approval</option>
+                  <option value="DELAYED">Delayed</option>
+                  <option value="COMPLETED">Completed</option>
+                  <option value="PARKED">Parked</option>
+                </Select>
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label>Vertical</Label>
-              <Select name="vertical" defaultValue={searchParams.vertical || ""}>
-                <option value="">All</option>
-                {verticals.map((v) => <option key={v.id} value={v.code}>{v.name}</option>)}
-              </Select>
+
+            {/* Date filter row */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 items-end rounded-lg border border-dashed border-border bg-muted/30 p-3">
+              <div className="space-y-1">
+                <Label>Filter by date</Label>
+                <Select name="dateType" defaultValue={searchParams.dateType || ""}>
+                  <option value="">— Select type —</option>
+                  <option value="assigned">Assigned Date</option>
+                  <option value="deadline_exact">Deadline Date</option>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Pick a date</Label>
+                <Input name="dateValue" type="date" defaultValue={searchParams.dateValue || ""} />
+              </div>
+              {searchParams.dateType && searchParams.dateValue && (
+                <div className="col-span-2 text-xs text-muted-foreground self-end pb-1">
+                  Showing tasks where {searchParams.dateType === "assigned" ? "assigned on" : "deadline is"}{" "}
+                  <span className="font-semibold text-foreground">{searchParams.dateValue}</span>
+                </div>
+              )}
             </div>
-            <div className="space-y-1">
-              <Label>Priority</Label>
-              <Select name="priority" defaultValue={searchParams.priority || ""}>
-                <option value="">All</option>
-                {priorities.map((p) => <option key={p.id} value={p.code}>{p.code} — {p.label}</option>)}
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label>Status</Label>
-              <Select name="status" defaultValue={searchParams.status || ""}>
-                <option value="">All (active)</option>
-                <option value="NOT_STARTED">Not Started</option>
-                <option value="IN_PROGRESS">In Progress</option>
-                <option value="WAITING_FOR_INPUT">Waiting Input</option>
-                <option value="WAITING_FOR_APPROVAL">Waiting Approval</option>
-                <option value="DELAYED">Delayed</option>
-                <option value="COMPLETED">Completed</option>
-                <option value="PARKED">Parked</option>
-              </Select>
-            </div>
-            <div className="col-span-2 sm:col-span-4 flex justify-end gap-2">
+
+            <div className="flex justify-end gap-2">
               <Button asChild variant="outline" size="sm"><Link href="/sm/tasks">Reset</Link></Button>
               <Button type="submit" size="sm">Apply filters</Button>
             </div>

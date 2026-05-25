@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { canManageTasks } from "@/lib/rbac";
 import { revalidatePath } from "next/cache";
 import { notifyAllCBO } from "@/lib/notify";
+import { sendTaskEmailToOwners } from "@/lib/email";
 import { friendlyPrismaError } from "@/lib/prisma-errors";
 import type { TaskStatus } from "@prisma/client";
 
@@ -64,11 +65,16 @@ export async function addUpdateAction(taskId: string, formData: FormData): Promi
   revalidatePath("/sm");
   revalidatePath("/sm/tasks");
 
-  // notifyAllCBO swallows its own errors — no try/catch needed.
-  // Notify CBO only on a status change (not every comment) to avoid noise
-  if (newStatus) {
-    const t = await prisma.task.findUnique({ where: { id: taskId }, include: { vertical: true } });
-    if (t) {
+  // Fetch full task details for notifications (email + CBO bell).
+  // Done after DB writes so we always read committed data.
+  const t = await prisma.task.findUnique({
+    where: { id: taskId },
+    include: { vertical: true, priority: true, ownerUser: true, subOwner: true },
+  });
+
+  if (t) {
+    // ── CBO in-app bell (status changes only, to avoid noise) ──
+    if (newStatus) {
       await notifyAllCBO({
         kind: "task.updated",
         title: `Status → ${String(newStatus).replace(/_/g, " ")}`,
@@ -76,6 +82,42 @@ export async function addUpdateAction(taskId: string, formData: FormData): Promi
         link: `/cbo/verticals/${t.vertical.code}`,
         refId: t.id,
         senderId: session.user.id,
+      });
+    }
+
+    // ── Email owner and sub-owner on any status change or note post ──
+    // Both scenarios count as a task "update" that the assignee should know about.
+    const hasOwnerEmail = !!t.ownerUser;
+    const hasSubOwnerEmail = !!t.subOwner;
+    if (hasOwnerEmail || hasSubOwnerEmail) {
+      const priorityLabel = t.priority
+        ? `${t.priority.code} — ${t.priority.label}`
+        : "—";
+      const deadline = t.deadline ? t.deadline.toISOString().slice(0, 10) : null;
+      const updaterName = session.user.name || "Strategic Manager";
+
+      // Build a human-readable summary of what changed
+      const summaryParts: string[] = [];
+      if (newStatus) summaryParts.push(`Status → ${String(newStatus).replace(/_/g, " ")}`);
+      if (rawNote)   summaryParts.push(`Note: ${rawNote}`);
+      const changedSummary = summaryParts.join("\n");
+
+      await sendTaskEmailToOwners({
+        owner: t.ownerUser
+          ? { email: t.ownerUser.email, name: t.ownerUser.name }
+          : null,
+        subOwner: t.subOwner
+          ? { email: t.subOwner.email, name: t.subOwner.name }
+          : null,
+        taskCode: t.code,
+        taskTitle: t.title,
+        taskId: t.id,
+        verticalName: t.vertical.name,
+        priorityLabel,
+        deadline,
+        eventType: "updated",
+        updatedByName: updaterName,
+        changedSummary,
       });
     }
   }

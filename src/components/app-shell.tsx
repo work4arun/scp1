@@ -22,6 +22,8 @@ import {
   ToggleLeft,
   Database,
   StickyNote,
+  ChevronDown,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SystemRole } from "@prisma/client";
@@ -31,7 +33,7 @@ import { NotificationBell } from "@/components/notification-bell";
 import { DarkModeToggle } from "@/components/dark-mode-toggle";
 
 type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }> };
-type NavSection = { label: string; items: NavItem[] };
+type NavSection = { label: string; items: NavItem[]; collapsible?: boolean };
 
 const ADMIN_NAV_ITEMS: NavItem[] = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard },
@@ -80,7 +82,7 @@ function navSectionsFor(role: SystemRole): NavSection[] {
         { href: "/sm/parking", label: "Parking Lot", icon: Archive },
       ],
     },
-    { label: "Admin", items: ADMIN_NAV_ITEMS },
+    { label: "Super Admin", items: ADMIN_NAV_ITEMS, collapsible: true },
   ];
 }
 
@@ -130,6 +132,7 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [adminExpanded, setAdminExpanded] = useState(() => pathname.startsWith("/admin"));
   const sections = navSectionsFor(role);
   const bottomItems = bottomNavFor(role);
 
@@ -173,14 +176,40 @@ export function AppShell({
           <nav className="flex-1 overflow-y-auto px-3 pb-4">
             {sections.map((section) => (
               <div key={section.label}>
-                <SectionLabel>{section.label}</SectionLabel>
-                <ul className="space-y-1">
-                  {section.items.map((item) => (
-                    <li key={item.href}>
-                      <NavLink item={item} pathname={pathname} onClick={close} />
-                    </li>
-                  ))}
-                </ul>
+                {section.collapsible ? (
+                  <>
+                    <button
+                      onClick={() => setAdminExpanded((v) => !v)}
+                      className="w-full flex items-center justify-between gap-2 px-3 pb-2 pt-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <ShieldCheck className="h-3.5 w-3.5" />
+                        {section.label}
+                      </div>
+                      <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", adminExpanded && "rotate-180")} />
+                    </button>
+                    {adminExpanded && (
+                      <ul className="space-y-1">
+                        {section.items.map((item) => (
+                          <li key={item.href}>
+                            <NavLink item={item} pathname={pathname} onClick={close} />
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <SectionLabel>{section.label}</SectionLabel>
+                    <ul className="space-y-1">
+                      {section.items.map((item) => (
+                        <li key={item.href}>
+                          <NavLink item={item} pathname={pathname} onClick={close} />
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
               </div>
             ))}
           </nav>
@@ -217,14 +246,40 @@ export function AppShell({
               <nav className="flex-1 overflow-y-auto px-3 py-3">
                 {sections.map((section) => (
                   <div key={section.label}>
-                    <SectionLabel>{section.label}</SectionLabel>
-                    <ul className="space-y-1">
-                      {section.items.map((item) => (
-                        <li key={item.href}>
-                          <NavLink item={item} pathname={pathname} onClick={close} />
-                        </li>
-                      ))}
-                    </ul>
+                    {section.collapsible ? (
+                      <>
+                        <button
+                          onClick={() => setAdminExpanded((v) => !v)}
+                          className="w-full flex items-center justify-between gap-2 px-3 pb-2 pt-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            {section.label}
+                          </div>
+                          <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", adminExpanded && "rotate-180")} />
+                        </button>
+                        {adminExpanded && (
+                          <ul className="space-y-1">
+                            {section.items.map((item) => (
+                              <li key={item.href}>
+                                <NavLink item={item} pathname={pathname} onClick={close} />
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <SectionLabel>{section.label}</SectionLabel>
+                        <ul className="space-y-1">
+                          {section.items.map((item) => (
+                            <li key={item.href}>
+                              <NavLink item={item} pathname={pathname} onClick={close} />
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
                   </div>
                 ))}
               </nav>

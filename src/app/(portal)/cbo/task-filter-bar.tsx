@@ -16,6 +16,8 @@
 //    source        — TaskSource enum
 //    intervention  — InterventionFlag enum
 //    deadline      — "overdue" | "today" | "this_week" | "no_deadline"
+//    dateType      — "assigned" | "deadline_exact"  (exact-day filter)
+//    dateValue     — YYYY-MM-DD
 // ─────────────────────────────────────────────────────────────────────────────
 
 import Link from "next/link";
@@ -190,6 +192,36 @@ export function TaskFilterBar({
             </SelectField>
           </div>
 
+          {/* Row 4 — Exact date filter (Assigned Date / Deadline Date + date picker) */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-5 items-end rounded-lg border border-dashed border-border bg-muted/30 p-3">
+            <div className="sm:col-span-1">
+              <Label htmlFor="f-datetype" className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                Filter by date
+              </Label>
+              <Select id="f-datetype" name="dateType" defaultValue={active.dateType ?? ""}>
+                <option value="">— Select type —</option>
+                <option value="assigned">Assigned Date</option>
+                <option value="deadline_exact">Deadline Date</option>
+              </Select>
+            </div>
+            <div className="sm:col-span-1">
+              <Label htmlFor="f-datevalue" className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                Pick a date
+              </Label>
+              <Input
+                id="f-datevalue"
+                name="dateValue"
+                type="date"
+                defaultValue={active.dateValue ?? ""}
+              />
+            </div>
+            <div className="sm:col-span-1 text-xs text-muted-foreground self-end pb-1">
+              {active.dateType && active.dateValue
+                ? `Showing tasks where ${active.dateType === "assigned" ? "assigned on" : "deadline is"} ${active.dateValue}`
+                : "Select a type and date, then click Apply filters"}
+            </div>
+          </div>
+
           {/* Active pills + actions */}
           <div className="flex flex-wrap items-center gap-2 pt-1">
             <div className="flex flex-wrap gap-1.5 flex-1">
@@ -310,6 +342,23 @@ function activePills(active: TaskFilterParams, data: FilterRefData): Pill[] {
   if (active.deadline) {
     const do_ = DEADLINE_OPTIONS.find((x) => x.value === active.deadline);
     out.push({ key: "deadline", dim: "Deadline", label: do_ ? do_.label : active.deadline, removeHref: without("deadline") });
+  }
+  if (active.dateType && active.dateValue) {
+    const typeLabel = active.dateType === "assigned" ? "Assigned Date" : "Deadline Date";
+    out.push({
+      key: "dateFilter",
+      dim: typeLabel,
+      label: active.dateValue,
+      removeHref: (base, a) => {
+        const usp = new URLSearchParams();
+        for (const [k, v] of Object.entries(a)) {
+          if (k === "dateType" || k === "dateValue" || !v) continue;
+          usp.set(k, String(v));
+        }
+        const qs = usp.toString();
+        return qs ? `${base}?${qs}` : base;
+      },
+    });
   }
   return out;
 }

@@ -13,6 +13,9 @@ export type TaskFilterParams = {
   source?: string;       // TaskSource
   intervention?: string; // InterventionFlag
   deadline?: string;     // "overdue" | "today" | "this_week" | "no_deadline"
+  // ── Date filter (exact-day picker) ──────────────────────────────────────
+  dateType?: string;     // "assigned" | "deadline_exact"
+  dateValue?: string;    // ISO date string "YYYY-MM-DD"
 };
 
 const VALID_STATUSES = new Set<TaskStatus>([
@@ -86,6 +89,20 @@ export function buildTaskWhere(params: TaskFilterParams): Prisma.TaskWhereInput 
       case "no_deadline":
         where.deadline = null;
         break;
+    }
+  }
+
+  // Exact-date filter — "Assigned Date" or "Deadline Date" + a YYYY-MM-DD value.
+  // Both params must be present together to be meaningful.
+  if (params.dateType && params.dateValue && /^\d{4}-\d{2}-\d{2}$/.test(params.dateValue)) {
+    const dayStart = new Date(`${params.dateValue}T00:00:00.000Z`);
+    const dayEnd   = new Date(`${params.dateValue}T00:00:00.000Z`);
+    dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+
+    if (params.dateType === "assigned") {
+      where.createdAt = { gte: dayStart, lt: dayEnd };
+    } else if (params.dateType === "deadline_exact") {
+      where.deadline = { gte: dayStart, lt: dayEnd };
     }
   }
 

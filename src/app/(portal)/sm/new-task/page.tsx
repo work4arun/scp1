@@ -14,7 +14,11 @@ export default async function NewTaskPage() {
     prisma.vertical.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
     prisma.subVertical.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
     prisma.priority.findMany({ where: { active: true }, orderBy: { rank: "asc" } }),
-    prisma.ownerRole.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
+    prisma.ownerRole.findMany({
+      where: { active: true },
+      orderBy: { name: "asc" },
+      include: { users: { where: { active: true }, select: { email: true }, take: 1 } },
+    }),
   ]);
 
   return (
@@ -26,7 +30,12 @@ export default async function NewTaskPage() {
             verticals={verticals.map((v) => ({ id: v.id, code: v.code, name: v.name }))}
             subVerticals={subVerticals.map((s) => ({ id: s.id, name: s.name, verticalId: s.verticalId }))}
             priorities={priorities.map((p) => ({ id: p.id, code: p.code, label: p.label }))}
-            ownerRoles={ownerRoles.map((r) => ({ id: r.id, name: r.name }))}
+            ownerRoles={ownerRoles.map((r) => ({
+              id: r.id,
+              name: r.name,
+              // First active user linked to this role — used to pre-fill owner email
+              email: r.users[0]?.email ?? null,
+            }))}
           />
         </CardContent>
       </Card>

@@ -13,7 +13,7 @@ import { createTaskAction } from "./actions";
 type Vertical  = { id: string; code: string; name: string };
 type SubVertical = { id: string; name: string; verticalId: string };
 type Priority  = { id: string; code: string; label: string };
-type OwnerRole = { id: string; name: string };
+type OwnerRole = { id: string; name: string; email: string | null };
 
 export function NewTaskForm({
   verticals,
@@ -29,7 +29,14 @@ export function NewTaskForm({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [verticalId, setVerticalId] = useState(verticals[0]?.id || "");
+  const [ownerEmail, setOwnerEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  // Build a lookup map: ownerRole.id → linked user email
+  const roleEmailMap = useMemo(
+    () => new Map(ownerRoles.filter((r) => r.email).map((r) => [r.id, r.email as string])),
+    [ownerRoles]
+  );
 
   const filteredSubs = useMemo(
     () => subVerticals.filter((s) => s.verticalId === verticalId),
@@ -97,7 +104,14 @@ export function NewTaskForm({
           </Select>
         </Field>
         <Field label="Owner role" htmlFor="ownerRoleId">
-          <Select id="ownerRoleId" name="ownerRoleId">
+          <Select
+            id="ownerRoleId"
+            name="ownerRoleId"
+            onChange={(e) => {
+              const email = roleEmailMap.get(e.target.value) ?? "";
+              setOwnerEmail(email);
+            }}
+          >
             <option value="">— Unassigned —</option>
             {ownerRoles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </Select>
@@ -111,6 +125,8 @@ export function NewTaskForm({
             name="ownerEmail"
             type="email"
             placeholder="owner@example.com — must be a registered user"
+            value={ownerEmail}
+            onChange={(e) => setOwnerEmail(e.target.value)}
           />
         </Field>
         <Field label="Sub-owner email" htmlFor="subOwnerEmail">
@@ -176,7 +192,7 @@ export function NewTaskForm({
       </Field>
 
       <div className="flex justify-end gap-2 pt-2">
-        <Button type="reset" variant="outline" onClick={() => setError(null)}>Reset</Button>
+        <Button type="reset" variant="outline" onClick={() => { setError(null); setOwnerEmail(""); }}>Reset</Button>
         <Button type="submit" disabled={pending}>{pending ? "Saving…" : "Add to register"}</Button>
       </div>
     </form>
