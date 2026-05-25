@@ -51,34 +51,49 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
   const vertical = await prisma.vertical.findUnique({ where: { id: verticalId } });
   if (!vertical) return { success: false, error: "Selected vertical was not found. Please refresh and try again." };
 
-  // ── Resolve owner by email ──
+  // ── Resolve owner by email ──────────────────────────────────────────────────
+  // ownerEmail is the contact address stored on the OwnerRole (set by admin in
+  // the Roles page). It does NOT need to be a system login. We attempt to find
+  // a matching User so we can link ownerUserId (enabling in-app notifications),
+  // but if no User exists we still create the task and send the email directly.
   let ownerUserId: string | null = null;
-  let ownerUser: { id: string; name: string; email: string } | null = null;
+  // ownerNotify — used for the email notification; may be a non-system contact.
+  let ownerNotify: { name: string; email: string } | null = null;
   if (ownerEmail) {
     const found = await prisma.user.findUnique({
       where: { email: ownerEmail },
       select: { id: true, name: true, email: true, active: true },
     });
-    if (!found || !found.active) {
-      return { success: false, error: `No active user found with email "${ownerEmail}". Please check and try again.` };
+    if (found && found.active) {
+      // Matched a system user — link them for in-app notifications too.
+      ownerUserId = found.id;
+      ownerNotify = { name: found.name, email: found.email };
+    } else {
+      // Not a system user (e.g. a role contact without a login).
+      // Proceed without ownerUserId; still send the notification email.
+      // Try to get the contact name from the role record.
+      const roleName = ownerRoleId
+        ? (await prisma.ownerRole.findUnique({ where: { id: ownerRoleId }, select: { ownerName: true } }))?.ownerName
+        : null;
+      ownerNotify = { name: roleName || ownerEmail, email: ownerEmail };
     }
-    ownerUserId = found.id;
-    ownerUser = found;
   }
 
-  // ── Resolve sub-owner by email ──
+  // ── Resolve sub-owner by email ───────────────────────────────────────────
   let subOwnerId: string | null = null;
-  let subOwnerUser: { id: string; name: string; email: string } | null = null;
+  let subOwnerNotify: { name: string; email: string } | null = null;
   if (subOwnerEmail) {
     const found = await prisma.user.findUnique({
       where: { email: subOwnerEmail },
       select: { id: true, name: true, email: true, active: true },
     });
-    if (!found || !found.active) {
-      return { success: false, error: `No active user found with email "${subOwnerEmail}". Please check and try again.` };
+    if (found && found.active) {
+      subOwnerId = found.id;
+      subOwnerNotify = { name: found.name, email: found.email };
+    } else {
+      // Not a system user — still notify via email, skip the FK link.
+      subOwnerNotify = { name: subOwnerEmail, email: subOwnerEmail };
     }
-    subOwnerId = found.id;
-    subOwnerUser = found;
   }
 
   const priority = await prisma.priority.findUnique({
@@ -198,8 +213,8 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
 
   const creatorName = session.user.name || "Strategic Manager";
   await sendTaskEmailToOwners({
-    owner: ownerUser,
-    subOwner: subOwnerUser,
+    owner: ownerNotify,
+    subOwner: subOwnerNotify,
     taskCode: created.code,
     taskTitle: title,
     taskId: created.id,

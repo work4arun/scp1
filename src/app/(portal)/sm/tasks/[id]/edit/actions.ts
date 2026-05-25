@@ -75,42 +75,59 @@ export async function updateTaskAction(taskId: string, formData: FormData): Prom
   });
   if (!existing) return { success: false, error: "Task not found — it may have been deleted by someone else." };
 
-  // ── Resolve owner by email ──
+  // ── Resolve owner by email ──────────────────────────────────────────────────
+  // The ownerEmail field holds the contact email from the OwnerRole. This is
+  // NOT required to be a registered system user. If a matching User exists we
+  // link ownerUserId (for in-app notifications); if not, we still send the
+  // notification email to the address and proceed without a User link.
   const ownerEmailInput = ((formData.get("ownerEmail") as string) || "").trim().toLowerCase();
   let ownerUserId: string | null = existing.ownerUserId;
-  let newOwnerUser: { id: string; name: string; email: string } | null = null;
+  // newOwnerNotify — used for the "newly assigned" email; set whenever the email
+  // field changes, regardless of whether the address maps to a system User.
+  let newOwnerNotify: { name: string; email: string } | null = null;
+  const ownerChanged = ownerEmailInput !== (existing.ownerUser?.email ?? "");
 
   if (ownerEmailInput === "") {
     ownerUserId = null;
-  } else if (ownerEmailInput !== (existing.ownerUser?.email ?? "")) {
+  } else if (ownerChanged) {
     const found = await prisma.user.findUnique({
       where: { email: ownerEmailInput },
       select: { id: true, name: true, email: true, active: true },
     });
-    if (!found || !found.active) {
-      return { success: false, error: `No active user found with email "${ownerEmailInput}". Please check and try again.` };
+    if (found && found.active) {
+      ownerUserId = found.id;
+      newOwnerNotify = { name: found.name, email: found.email };
+    } else {
+      // Contact email without a system login — proceed without ownerUserId.
+      ownerUserId = null;
+      const ownerRoleIdNew = (formData.get("ownerRoleId") as string) || null;
+      const roleName = ownerRoleIdNew
+        ? (await prisma.ownerRole.findUnique({ where: { id: ownerRoleIdNew }, select: { ownerName: true } }))?.ownerName
+        : null;
+      newOwnerNotify = { name: roleName || ownerEmailInput, email: ownerEmailInput };
     }
-    ownerUserId = found.id;
-    newOwnerUser = found;
   }
 
-  // ── Resolve sub-owner by email ──
+  // ── Resolve sub-owner by email ───────────────────────────────────────────
   const subOwnerEmailInput = ((formData.get("subOwnerEmail") as string) || "").trim().toLowerCase();
   let subOwnerId: string | null = existing.subOwnerId;
-  let newSubOwnerUser: { id: string; name: string; email: string } | null = null;
+  let newSubOwnerNotify: { name: string; email: string } | null = null;
+  const subOwnerChanged = subOwnerEmailInput !== (existing.subOwner?.email ?? "");
 
   if (subOwnerEmailInput === "") {
     subOwnerId = null;
-  } else if (subOwnerEmailInput !== (existing.subOwner?.email ?? "")) {
+  } else if (subOwnerChanged) {
     const found = await prisma.user.findUnique({
       where: { email: subOwnerEmailInput },
       select: { id: true, name: true, email: true, active: true },
     });
-    if (!found || !found.active) {
-      return { success: false, error: `No active user found with email "${subOwnerEmailInput}". Please check and try again.` };
+    if (found && found.active) {
+      subOwnerId = found.id;
+      newSubOwnerNotify = { name: found.name, email: found.email };
+    } else {
+      subOwnerId = null;
+      newSubOwnerNotify = { name: subOwnerEmailInput, email: subOwnerEmailInput };
     }
-    subOwnerId = found.id;
-    newSubOwnerUser = found;
   }
 
   // Build the patch
@@ -192,10 +209,10 @@ export async function updateTaskAction(taskId: string, formData: FormData): Prom
   const taskTitle = patch.title || existing.title;
 
   // ── Email: newly assigned owner / sub-owner ──
-  if (newOwnerUser || newSubOwnerUser) {
+  if (newOwnerNotify || newSubOwnerNotify) {
     await sendTaskEmailToOwners({
-      owner: newOwnerUser,
-      subOwner: newSubOwnerUser,
+      owner: newOwnerNotify,
+      subOwner: newSubOwnerNotify,
       taskCode: existing.code,
       taskTitle,
       taskId,
@@ -242,10 +259,10 @@ export async function updateTaskAction(taskId: string, formData: FormData): Prom
 
   // ── Email: existing (unchanged) owner/sub-owner on other field changes ──
   if (diffs.length > 0) {
-    const retainedOwner = ownerUserId && ownerUserId === existing.ownerUserId && existing.ownerUser && !newOwnerUser
+    const retainedOwner = ownerUserId && ownerUserId === existing.ownerUserId && existing.ownerUser && !newOwnerNotify
       ? { email: existing.ownerUser.email, name: existing.ownerUser.name }
       : null;
-    const retainedSubOwner = subOwnerId && subOwnerId === existing.subOwnerId && existing.subOwner && !newSubOwnerUser
+    const retainedSubOwner = subOwnerId && subOwnerId === existing.subOwnerId && existing.subOwner && !newSubOwnerNotify
       ? { email: existing.subOwner.email, name: existing.subOwner.name }
       : null;
 

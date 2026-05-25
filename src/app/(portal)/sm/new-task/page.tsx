@@ -17,7 +17,6 @@ export default async function NewTaskPage() {
     prisma.ownerRole.findMany({
       where: { active: true },
       orderBy: { name: "asc" },
-      include: { users: { where: { active: true }, select: { email: true }, take: 1 } },
     }),
   ]);
 
@@ -33,8 +32,9 @@ export default async function NewTaskPage() {
             ownerRoles={ownerRoles.map((r) => ({
               id: r.id,
               name: r.name,
-              // First active user linked to this role — used to pre-fill owner email
-              email: r.users[0]?.email ?? null,
+              // Contact email set by admin in the Roles page (ownerRole.ownerEmail).
+              // This is a notification address — it does NOT need to be a system login.
+              email: r.ownerEmail ?? null,
             }))}
           />
         </CardContent>
