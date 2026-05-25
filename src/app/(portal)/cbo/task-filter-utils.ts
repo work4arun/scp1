@@ -15,7 +15,6 @@ export type TaskFilterParams = {
   deadline?: string;     // "overdue" | "today" | "this_week" | "no_deadline"
   // ── Date filter ─────────────────────────────────────────────────────────
   dateType?: string;     // "assigned" | "deadline_exact"
-  dateValue?: string;    // exact date "YYYY-MM-DD"
   dateFrom?: string;     // range start "YYYY-MM-DD"
   dateTo?: string;       // range end   "YYYY-MM-DD"
 };
@@ -94,7 +93,7 @@ export function buildTaskWhere(params: TaskFilterParams): Prisma.TaskWhereInput 
     }
   }
 
-  // ── Date range filter (From → To) — takes priority over exact-date picker ──
+  // ── Date range filter (From → To) ──────────────────────────────────────
   const ISO = /^\d{4}-\d{2}-\d{2}$/;
   const hasFrom = params.dateFrom && ISO.test(params.dateFrom);
   const hasTo   = params.dateTo   && ISO.test(params.dateTo);
@@ -105,7 +104,7 @@ export function buildTaskWhere(params: TaskFilterParams): Prisma.TaskWhereInput 
       rangeFilter.gte = new Date(`${params.dateFrom}T00:00:00.000Z`);
     }
     if (hasTo) {
-      // lt end-of-day: shift dateTo forward by one UTC day so the To date is inclusive.
+      // Shift dateTo forward by one UTC day so the To date is inclusive.
       const toEnd = new Date(`${params.dateTo}T00:00:00.000Z`);
       toEnd.setUTCDate(toEnd.getUTCDate() + 1);
       rangeFilter.lt = toEnd;
@@ -114,17 +113,6 @@ export function buildTaskWhere(params: TaskFilterParams): Prisma.TaskWhereInput 
       where.createdAt = rangeFilter;
     } else if (params.dateType === "deadline_exact") {
       where.deadline = rangeFilter;
-    }
-  } else if (params.dateType && params.dateValue && ISO.test(params.dateValue)) {
-    // ── Exact-date filter (single day picker) ──────────────────────────────
-    const dayStart = new Date(`${params.dateValue}T00:00:00.000Z`);
-    const dayEnd   = new Date(`${params.dateValue}T00:00:00.000Z`);
-    dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
-
-    if (params.dateType === "assigned") {
-      where.createdAt = { gte: dayStart, lt: dayEnd };
-    } else if (params.dateType === "deadline_exact") {
-      where.deadline = { gte: dayStart, lt: dayEnd };
     }
   }
 

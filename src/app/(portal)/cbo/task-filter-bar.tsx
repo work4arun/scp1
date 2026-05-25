@@ -16,8 +16,9 @@
 //    source        — TaskSource enum
 //    intervention  — InterventionFlag enum
 //    deadline      — "overdue" | "today" | "this_week" | "no_deadline"
-//    dateType      — "assigned" | "deadline_exact"  (exact-day filter)
-//    dateValue     — YYYY-MM-DD
+//    dateType      — "assigned" | "deadline_exact"
+//    dateFrom      — YYYY-MM-DD  (range start, inclusive)
+//    dateTo        — YYYY-MM-DD  (range end, inclusive)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import Link from "next/link";
@@ -192,9 +193,8 @@ export function TaskFilterBar({
             </SelectField>
           </div>
 
-          {/* Row 4 — Date filters (Exact date + Date range) */}
-          <div className="rounded-lg border border-dashed border-border bg-muted/30 p-3 space-y-3">
-            {/* Date type selector — shared by both exact and range modes */}
+          {/* Row 4 — Date range filter */}
+          <div className="rounded-lg border border-dashed border-border bg-muted/30 p-3">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-5">
               <div className="sm:col-span-1">
                 <Label htmlFor="f-datetype" className="text-[11px] uppercase tracking-wide text-muted-foreground">
@@ -207,20 +207,6 @@ export function TaskFilterBar({
                 </Select>
               </div>
 
-              {/* Exact date picker */}
-              <div className="sm:col-span-1">
-                <Label htmlFor="f-datevalue" className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                  Pick a date
-                </Label>
-                <Input
-                  id="f-datevalue"
-                  name="dateValue"
-                  type="date"
-                  defaultValue={active.dateValue ?? ""}
-                />
-              </div>
-
-              {/* Date range — From */}
               <div className="sm:col-span-1">
                 <Label htmlFor="f-datefrom" className="text-[11px] uppercase tracking-wide text-muted-foreground">
                   From date
@@ -233,7 +219,6 @@ export function TaskFilterBar({
                 />
               </div>
 
-              {/* Date range — To */}
               <div className="sm:col-span-1">
                 <Label htmlFor="f-dateto" className="text-[11px] uppercase tracking-wide text-muted-foreground">
                   To date
@@ -246,13 +231,10 @@ export function TaskFilterBar({
                 />
               </div>
 
-              {/* Active hint */}
-              <div className="sm:col-span-1 text-xs text-muted-foreground self-end pb-1">
+              <div className="sm:col-span-2 text-xs text-muted-foreground self-end pb-1">
                 {active.dateType && (active.dateFrom || active.dateTo)
-                  ? `Range: ${active.dateFrom || "any"} → ${active.dateTo || "any"}`
-                  : active.dateType && active.dateValue
-                  ? `Exact: ${active.dateValue}`
-                  : "Select type, then pick a date or range"}
+                  ? `${active.dateType === "assigned" ? "Assigned" : "Deadline"}: ${active.dateFrom || "any"} → ${active.dateTo || "any"}`
+                  : "Select type, then set a From or To date (or both)"}
               </div>
             </div>
           </div>
@@ -378,7 +360,7 @@ function activePills(active: TaskFilterParams, data: FilterRefData): Pill[] {
     const do_ = DEADLINE_OPTIONS.find((x) => x.value === active.deadline);
     out.push({ key: "deadline", dim: "Deadline", label: do_ ? do_.label : active.deadline, removeHref: without("deadline") });
   }
-  // Date range pill — shown when From or To is set
+  // Date range pill — shown when dateType + at least one of From/To is set
   if (active.dateType && (active.dateFrom || active.dateTo)) {
     const typeLabel = active.dateType === "assigned" ? "Assigned" : "Deadline";
     const rangeLabel = `${active.dateFrom || "any"} → ${active.dateTo || "any"}`;
@@ -390,25 +372,6 @@ function activePills(active: TaskFilterParams, data: FilterRefData): Pill[] {
         const usp = new URLSearchParams();
         for (const [k, v] of Object.entries(a)) {
           if (k === "dateType" || k === "dateFrom" || k === "dateTo" || !v) continue;
-          usp.set(k, String(v));
-        }
-        const qs = usp.toString();
-        return qs ? `${base}?${qs}` : base;
-      },
-    });
-  }
-
-  // Exact date pill — shown only when range is NOT active
-  if (active.dateType && active.dateValue && !active.dateFrom && !active.dateTo) {
-    const typeLabel = active.dateType === "assigned" ? "Assigned Date" : "Deadline Date";
-    out.push({
-      key: "dateFilter",
-      dim: typeLabel,
-      label: active.dateValue,
-      removeHref: (base, a) => {
-        const usp = new URLSearchParams();
-        for (const [k, v] of Object.entries(a)) {
-          if (k === "dateType" || k === "dateValue" || !v) continue;
           usp.set(k, String(v));
         }
         const qs = usp.toString();

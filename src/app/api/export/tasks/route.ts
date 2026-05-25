@@ -46,7 +46,6 @@ export async function GET(req: Request) {
     intervention: sp.get("intervention")?? undefined,
     deadline:     sp.get("deadline")    ?? undefined,
     dateType:     sp.get("dateType")    ?? undefined,
-    dateValue:    sp.get("dateValue")   ?? undefined,
     dateFrom:     sp.get("dateFrom")    ?? undefined,
     dateTo:       sp.get("dateTo")      ?? undefined,
   });

@@ -17,7 +17,7 @@ import { isEnabled } from "@/lib/features";
 export default async function SmTasks({
   searchParams,
 }: {
-  searchParams: { vertical?: string; priority?: string; status?: string; q?: string; page?: string; dateType?: string; dateValue?: string; dateFrom?: string; dateTo?: string };
+  searchParams: { vertical?: string; priority?: string; status?: string; q?: string; page?: string; dateType?: string; dateFrom?: string; dateTo?: string };
 }) {
   const session = await auth();
   if (!canManageTasks(session?.user.systemRole)) redirect("/");
@@ -35,7 +35,6 @@ export default async function SmTasks({
   const hasTo   = searchParams.dateTo   && ISO.test(searchParams.dateTo);
 
   if (searchParams.dateType && (hasFrom || hasTo)) {
-    // Date range filter — takes priority over exact picker
     const rangeFilter: { gte?: Date; lt?: Date } = {};
     if (hasFrom) rangeFilter.gte = new Date(`${searchParams.dateFrom}T00:00:00.000Z`);
     if (hasTo) {
@@ -47,16 +46,6 @@ export default async function SmTasks({
       where.createdAt = rangeFilter;
     } else if (searchParams.dateType === "deadline_exact") {
       where.deadline = rangeFilter;
-    }
-  } else if (searchParams.dateType && searchParams.dateValue && ISO.test(searchParams.dateValue)) {
-    // Exact-date filter — single day
-    const dayStart = new Date(`${searchParams.dateValue}T00:00:00.000Z`);
-    const dayEnd   = new Date(`${searchParams.dateValue}T00:00:00.000Z`);
-    dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
-    if (searchParams.dateType === "assigned") {
-      where.createdAt = { gte: dayStart, lt: dayEnd };
-    } else if (searchParams.dateType === "deadline_exact") {
-      where.deadline = { gte: dayStart, lt: dayEnd };
     }
   }
 
@@ -98,7 +87,6 @@ export default async function SmTasks({
   if (searchParams.status) queryString.set("status", searchParams.status);
   if (searchParams.q) queryString.set("q", searchParams.q);
   if (searchParams.dateType)  queryString.set("dateType",  searchParams.dateType);
-  if (searchParams.dateValue) queryString.set("dateValue", searchParams.dateValue);
   if (searchParams.dateFrom)  queryString.set("dateFrom",  searchParams.dateFrom);
   if (searchParams.dateTo)    queryString.set("dateTo",    searchParams.dateTo);
   const baseQs = queryString.toString();
@@ -177,9 +165,9 @@ export default async function SmTasks({
               </div>
             </div>
 
-            {/* Date filter row — exact date + date range */}
-            <div className="rounded-lg border border-dashed border-border bg-muted/30 p-3 space-y-2">
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+            {/* Date range filter */}
+            <div className="rounded-lg border border-dashed border-border bg-muted/30 p-3">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <div className="space-y-1">
                   <Label>Filter by date</Label>
                   <Select name="dateType" defaultValue={searchParams.dateType || ""}>
@@ -187,10 +175,6 @@ export default async function SmTasks({
                     <option value="assigned">Assigned Date</option>
                     <option value="deadline_exact">Deadline Date</option>
                   </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label>Pick a date</Label>
-                  <Input name="dateValue" type="date" defaultValue={searchParams.dateValue || ""} />
                 </div>
                 <div className="space-y-1">
                   <Label>From date</Label>
@@ -202,10 +186,8 @@ export default async function SmTasks({
                 </div>
                 <div className="text-xs text-muted-foreground self-end pb-1">
                   {searchParams.dateType && (searchParams.dateFrom || searchParams.dateTo)
-                    ? <>Range: <span className="font-semibold text-foreground">{searchParams.dateFrom || "any"}</span>{" → "}<span className="font-semibold text-foreground">{searchParams.dateTo || "any"}</span></>
-                    : searchParams.dateType && searchParams.dateValue
-                    ? <>Exact: <span className="font-semibold text-foreground">{searchParams.dateValue}</span></>
-                    : "Select type, then a date or range"}
+                    ? <>{searchParams.dateType === "assigned" ? "Assigned" : "Deadline"}: <span className="font-semibold text-foreground">{searchParams.dateFrom || "any"}</span>{" → "}<span className="font-semibold text-foreground">{searchParams.dateTo || "any"}</span></>
+                    : "Select type, then set a From or To date"}
                 </div>
               </div>
             </div>
