@@ -5,7 +5,7 @@ import { auth } from "@/lib/auth";
 import { canManageTasks } from "@/lib/rbac";
 import { revalidatePath } from "next/cache";
 import { notifyAllCBO, notifyUser } from "@/lib/notify";
-import { sendTaskEmailToOwners } from "@/lib/email";
+import { sendFullTaskNotification } from "@/lib/email";
 import type { TaskSource, InterventionFlag } from "@prisma/client";
 import { computeSlaDueAt } from "@/lib/sla";
 import { writeAudit } from "@/lib/audit";
@@ -212,15 +212,8 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
   );
 
   const creatorName = session.user.name || "Strategic Manager";
-  await sendTaskEmailToOwners({
-    owner: ownerNotify,
-    subOwner: subOwnerNotify,
-    taskCode: created.code,
-    taskTitle: title,
+  await sendFullTaskNotification({
     taskId: created.id,
-    verticalName: vertical.name,
-    priorityLabel: priority ? `${priority.code} — ${priority.label}` : priorityId,
-    deadline: deadlineStr || null,
     eventType: "assigned",
     updatedByName: creatorName,
   });

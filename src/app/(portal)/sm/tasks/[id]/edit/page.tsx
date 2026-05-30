@@ -41,7 +41,7 @@ export default async function EditTaskPage({ params }: { params: { id: string } 
             verticals={verticals.map((v) => ({ id: v.id, code: v.code, name: v.name }))}
             subVerticals={subVerticals.map((s) => ({ id: s.id, name: s.name, verticalId: s.verticalId }))}
             priorities={priorities.map((p) => ({ id: p.id, code: p.code, label: p.label }))}
-            ownerRoles={ownerRoles.map((r) => ({ id: r.id, name: r.name }))}
+            ownerRoles={ownerRoles.map((r) => ({ id: r.id, name: r.name, email: r.ownerEmail ?? null }))}
             initial={{
               title: task.title,
               verticalId: task.verticalId,

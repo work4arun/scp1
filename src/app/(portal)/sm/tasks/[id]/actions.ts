@@ -5,7 +5,7 @@ import { auth } from "@/lib/auth";
 import { canManageTasks } from "@/lib/rbac";
 import { revalidatePath } from "next/cache";
 import { notifyAllCBO } from "@/lib/notify";
-import { sendTaskEmailToOwners } from "@/lib/email";
+import { sendFullTaskNotification } from "@/lib/email";
 import { friendlyPrismaError } from "@/lib/prisma-errors";
 import type { TaskStatus } from "@prisma/client";
 
@@ -86,38 +86,17 @@ export async function addUpdateAction(taskId: string, formData: FormData): Promi
     }
 
     // ── Email owner and sub-owner on any status change or note post ──
-    // Both scenarios count as a task "update" that the assignee should know about.
-    const hasOwnerEmail = !!t.ownerUser;
-    const hasSubOwnerEmail = !!t.subOwner;
-    if (hasOwnerEmail || hasSubOwnerEmail) {
-      const priorityLabel = t.priority
-        ? `${t.priority.code} — ${t.priority.label}`
-        : "—";
-      const deadline = t.deadline ? t.deadline.toISOString().slice(0, 10) : null;
+    if (t.ownerUser || t.subOwner) {
       const updaterName = session.user.name || "Strategic Manager";
-
-      // Build a human-readable summary of what changed
       const summaryParts: string[] = [];
       if (newStatus) summaryParts.push(`Status → ${String(newStatus).replace(/_/g, " ")}`);
       if (rawNote)   summaryParts.push(`Note: ${rawNote}`);
-      const changedSummary = summaryParts.join("\n");
 
-      await sendTaskEmailToOwners({
-        owner: t.ownerUser
-          ? { email: t.ownerUser.email, name: t.ownerUser.name }
-          : null,
-        subOwner: t.subOwner
-          ? { email: t.subOwner.email, name: t.subOwner.name }
-          : null,
-        taskCode: t.code,
-        taskTitle: t.title,
+      await sendFullTaskNotification({
         taskId: t.id,
-        verticalName: t.vertical.name,
-        priorityLabel,
-        deadline,
         eventType: "updated",
         updatedByName: updaterName,
-        changedSummary,
+        changedSummary: summaryParts.join("\n") || undefined,
       });
     }
   }

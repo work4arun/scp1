@@ -14,7 +14,7 @@ import type { TaskStatus, TaskSource, InterventionFlag } from "@prisma/client";
 type Vertical    = { id: string; code: string; name: string };
 type SubVertical = { id: string; name: string; verticalId: string };
 type Priority    = { id: string; code: string; label: string };
-type OwnerRole   = { id: string; name: string };
+type OwnerRole   = { id: string; name: string; email: string | null };
 
 export function EditTaskForm({
   taskId,
@@ -53,6 +53,13 @@ export function EditTaskForm({
   const [verticalId, setVerticalId] = useState(initial.verticalId);
   const [status, setStatus] = useState<TaskStatus>(initial.status);
   const [error, setError] = useState<string | null>(null);
+  const [ownerEmail, setOwnerEmail] = useState(initial.ownerUserEmail || "");
+
+  // Build lookup: ownerRole.id → email stored on the role record
+  const roleEmailMap = useMemo(
+    () => new Map(ownerRoles.filter((r) => r.email).map((r) => [r.id, r.email as string])),
+    [ownerRoles]
+  );
 
   const filteredSubs = useMemo(
     () => subVerticals.filter((s) => s.verticalId === verticalId),
@@ -134,7 +141,15 @@ export function EditTaskForm({
           </Select>
         </Field>
         <Field label="Owner role" htmlFor="ownerRoleId">
-          <Select id="ownerRoleId" name="ownerRoleId" defaultValue={initial.ownerRoleId || ""}>
+          <Select
+            id="ownerRoleId"
+            name="ownerRoleId"
+            defaultValue={initial.ownerRoleId || ""}
+            onChange={(e) => {
+              const email = roleEmailMap.get(e.target.value) ?? "";
+              setOwnerEmail(email);
+            }}
+          >
             <option value="">— Unassigned —</option>
             {ownerRoles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </Select>
@@ -147,8 +162,9 @@ export function EditTaskForm({
             id="ownerEmail"
             name="ownerEmail"
             type="email"
-            defaultValue={initial.ownerUserEmail || ""}
             placeholder="owner@example.com — must be a registered user"
+            value={ownerEmail}
+            onChange={(e) => setOwnerEmail(e.target.value)}
           />
         </Field>
         <Field label="Sub-owner email" htmlFor="subOwnerEmail">

@@ -5,7 +5,7 @@ import { auth } from "@/lib/auth";
 import { canManageTasks, canConfigureSystem } from "@/lib/rbac";
 import { revalidatePath } from "next/cache";
 import type { TaskSource, InterventionFlag, TaskStatus, SystemRole } from "@prisma/client";
-import { sendTaskEmailToOwners } from "@/lib/email";
+import { sendFullTaskNotification } from "@/lib/email";
 import { notifyAllCBO } from "@/lib/notify";
 import { writeAudit } from "@/lib/audit";
 import { isEnabled } from "@/lib/features";
@@ -204,78 +204,51 @@ export async function updateTaskAction(taskId: string, formData: FormData): Prom
   const updaterName = authed.userName;
   const changedSummary = diffs.join("\n");
 
-  const taskDeadline = deadlineStr || (existing.deadline ? existing.deadline.toISOString().slice(0, 10) : null);
-  const priorityLabel = existing.priority ? `${existing.priority.code} — ${existing.priority.label}` : "Unknown";
-  const taskTitle = patch.title || existing.title;
-
   // ── Email: newly assigned owner / sub-owner ──
   if (newOwnerNotify || newSubOwnerNotify) {
-    await sendTaskEmailToOwners({
-      owner: newOwnerNotify,
-      subOwner: newSubOwnerNotify,
-      taskCode: existing.code,
-      taskTitle,
+    await sendFullTaskNotification({
       taskId,
-      verticalName: existing.vertical.name,
-      priorityLabel,
-      deadline: taskDeadline,
       eventType: "assigned",
       updatedByName: updaterName,
     });
   }
 
-  // ── Email: notify OLD owner that they've been removed ──
+  // ── Email: notify OLD owner/sub-owner that they have been removed ──
   const ownerWasRemoved = existing.ownerUser && ownerUserId !== existing.ownerUserId;
   const subOwnerWasRemoved = existing.subOwner && subOwnerId !== existing.subOwnerId;
   if (ownerWasRemoved && existing.ownerUser) {
-    await sendTaskEmailToOwners({
-      owner: { email: existing.ownerUser.email, name: existing.ownerUser.name },
-      subOwner: subOwnerWasRemoved && existing.subOwner ? { email: existing.subOwner.email, name: existing.subOwner.name } : null,
-      taskCode: existing.code,
-      taskTitle,
+    await sendFullTaskNotification({
       taskId,
-      verticalName: existing.vertical.name,
-      priorityLabel,
-      deadline: taskDeadline,
       eventType: "updated",
       updatedByName: updaterName,
       changedSummary: "You have been removed as owner of this task.",
+      overrideRecipients: {
+        owner: { email: existing.ownerUser.email, name: existing.ownerUser.name },
+        subOwner: subOwnerWasRemoved && existing.subOwner
+          ? { email: existing.subOwner.email, name: existing.subOwner.name }
+          : null,
+      },
     });
   } else if (subOwnerWasRemoved && existing.subOwner && !ownerWasRemoved) {
-    await sendTaskEmailToOwners({
-      owner: null,
-      subOwner: { email: existing.subOwner.email, name: existing.subOwner.name },
-      taskCode: existing.code,
-      taskTitle,
+    await sendFullTaskNotification({
       taskId,
-      verticalName: existing.vertical.name,
-      priorityLabel,
-      deadline: taskDeadline,
       eventType: "updated",
       updatedByName: updaterName,
       changedSummary: "You have been removed as sub-owner of this task.",
+      overrideRecipients: {
+        owner: null,
+        subOwner: { email: existing.subOwner.email, name: existing.subOwner.name },
+      },
     });
   }
 
-  // ── Email: existing (unchanged) owner/sub-owner on other field changes ──
+  // ── Email: retained owner/sub-owner on other field changes ──
   if (diffs.length > 0) {
-    const retainedOwner = ownerUserId && ownerUserId === existing.ownerUserId && existing.ownerUser && !newOwnerNotify
-      ? { email: existing.ownerUser.email, name: existing.ownerUser.name }
-      : null;
-    const retainedSubOwner = subOwnerId && subOwnerId === existing.subOwnerId && existing.subOwner && !newSubOwnerNotify
-      ? { email: existing.subOwner.email, name: existing.subOwner.name }
-      : null;
-
-    if (retainedOwner || retainedSubOwner) {
-      await sendTaskEmailToOwners({
-        owner: retainedOwner,
-        subOwner: retainedSubOwner,
-        taskCode: existing.code,
-        taskTitle,
+    const hasRetainedOwner    = ownerUserId && ownerUserId === existing.ownerUserId && existing.ownerUser && !newOwnerNotify;
+    const hasRetainedSubOwner = subOwnerId  && subOwnerId  === existing.subOwnerId  && existing.subOwner  && !newSubOwnerNotify;
+    if (hasRetainedOwner || hasRetainedSubOwner) {
+      await sendFullTaskNotification({
         taskId,
-        verticalName: existing.vertical.name,
-        priorityLabel,
-        deadline: taskDeadline,
         eventType: "updated",
         updatedByName: updaterName,
         changedSummary,
@@ -287,7 +260,7 @@ export async function updateTaskAction(taskId: string, formData: FormData): Prom
   await notifyAllCBO({
     kind: "task.updated",
     title: `Task updated in ${existing.vertical.name}`,
-    body: `${existing.code} · ${taskTitle}`,
+    body: `${existing.code} · ${patch.title || existing.title}`,
     link: `/cbo/verticals/${existing.vertical.code}`,
     refId: taskId,
     senderId: userId,
