@@ -85,20 +85,20 @@ export async function addUpdateAction(taskId: string, formData: FormData): Promi
       });
     }
 
-    // ── Email owner and sub-owner on any status change or note post ──
-    if (t.ownerUser || t.subOwner) {
-      const updaterName = session.user.name || "Strategic Manager";
-      const summaryParts: string[] = [];
-      if (newStatus) summaryParts.push(`Status → ${String(newStatus).replace(/_/g, " ")}`);
-      if (rawNote)   summaryParts.push(`Note: ${rawNote}`);
+    // ── Email on any status change or comment ──
+    // sendFullTaskNotification resolves the recipient itself (ownerUser OR
+    // ownerRole.ownerEmail), so no recipient check is needed here.
+    const updaterName = session.user.name || "Strategic Manager";
+    const summaryParts: string[] = [];
+    if (newStatus) summaryParts.push(`Status → ${String(newStatus).replace(/_/g, " ")}`);
+    if (rawNote)   summaryParts.push(`Comment: ${rawNote}`);
 
-      await sendFullTaskNotification({
-        taskId: t.id,
-        eventType: "updated",
-        updatedByName: updaterName,
-        changedSummary: summaryParts.join("\n") || undefined,
-      });
-    }
+    await sendFullTaskNotification({
+      taskId: t.id,
+      eventType: "updated",
+      updatedByName: updaterName,
+      changedSummary: summaryParts.join("\n") || undefined,
+    });
   }
 
   return { success: true };
