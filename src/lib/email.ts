@@ -180,8 +180,21 @@ export async function sendFullTaskNotification(args: FullTaskNotificationArgs): 
       ownerRecipient    = args.overrideRecipients.owner;
       subOwnerRecipient = args.overrideRecipients.subOwner;
     } else {
-      if (task.ownerUser)  ownerRecipient    = { email: task.ownerUser.email,  name: task.ownerUser.name };
-      if (task.subOwner)   subOwnerRecipient = { email: task.subOwner.email,   name: task.subOwner.name };
+      // Prefer the linked system User (ownerUser). If none, fall back to the
+      // contact email stored directly on the OwnerRole record — this is the
+      // common case when owners are external contacts without portal logins.
+      if (task.ownerUser) {
+        ownerRecipient = { email: task.ownerUser.email, name: task.ownerUser.name };
+      } else if (task.ownerRole?.ownerEmail) {
+        ownerRecipient = {
+          email: task.ownerRole.ownerEmail,
+          name:  task.ownerRole.ownerName || task.ownerRole.name,
+        };
+      }
+
+      if (task.subOwner) {
+        subOwnerRecipient = { email: task.subOwner.email, name: task.subOwner.name };
+      }
     }
 
     const jobs: Promise<void>[] = [];

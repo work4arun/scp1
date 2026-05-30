@@ -124,17 +124,22 @@ export function NewTaskForm({
             id="ownerEmail"
             name="ownerEmail"
             type="email"
-            placeholder="owner@example.com — must be a registered user"
+            placeholder="Auto-filled from role — or type manually"
             value={ownerEmail}
             onChange={(e) => setOwnerEmail(e.target.value)}
           />
+          {ownerEmail === "" && (
+            <p className="text-xs text-muted-foreground mt-1">
+              Select an owner role above to auto-fill, or type the email manually.
+            </p>
+          )}
         </Field>
         <Field label="Sub-owner email" htmlFor="subOwnerEmail">
           <Input
             id="subOwnerEmail"
             name="subOwnerEmail"
             type="email"
-            placeholder="sub-owner@example.com — optional follow-up contact"
+            placeholder="optional — for follow-up contact"
           />
         </Field>
       </div>

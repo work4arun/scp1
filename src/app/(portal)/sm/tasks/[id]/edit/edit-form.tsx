@@ -162,7 +162,7 @@ export function EditTaskForm({
             id="ownerEmail"
             name="ownerEmail"
             type="email"
-            placeholder="owner@example.com — must be a registered user"
+            placeholder="Auto-filled from role — or type manually"
             value={ownerEmail}
             onChange={(e) => setOwnerEmail(e.target.value)}
           />
