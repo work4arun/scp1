@@ -24,6 +24,13 @@
 //  The fix: do NOT parse codes with a SQL regex. Fetch the codes and parse the
 //  trailing number in JavaScript, where the regex is reliable. This also makes
 //  the logic trivial to unit-test without a database.
+//
+//  LOCKING STRATEGY:
+//  We use SELECT ... FOR UPDATE on the Vertical row to serialize concurrent
+//  task creation within the same vertical. This is standard Postgres row-level
+//  locking and is guaranteed to participate in the enclosing transaction.
+//  (An earlier iteration used pg_advisory_xact_lock, which can silently fail
+//  to execute within a Prisma interactive transaction in certain environments.)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { Prisma } from "@prisma/client";
@@ -63,10 +70,12 @@ export function formatTaskCode(verticalCode: string, num: number): string {
 /**
  * Compute the next sequential task code for a vertical inside a transaction.
  *
- * Call this INSIDE a `prisma.$transaction(async (tx) => { ... })` block. It
- * first takes a Postgres advisory transaction lock keyed on the vertical id so
- * concurrent creates against the same vertical serialize (different verticals
- * never block each other). The lock is released automatically when the
+ * Call this INSIDE a `prisma.$transaction(async (tx) => { ... })` block.
+ *
+ * It issues `SELECT ... FOR UPDATE` on the Vertical row so that any concurrent
+ * transaction trying to create a task in the same vertical must wait for this
+ * transaction to commit before it can acquire its own lock. Different verticals
+ * never block each other. The lock is released automatically when the
  * transaction commits or rolls back.
  *
  * The numeric suffix is parsed in JavaScript — never with a SQL regex — for
@@ -74,18 +83,20 @@ export function formatTaskCode(verticalCode: string, num: number): string {
  *
  * NOTE: callers should still wrap `tx.task.create` in a P2002 retry loop as a
  * belt-and-suspenders defence against codes inserted out-of-band (manual SQL,
- * data imports). With the advisory lock held that should never be needed, but
- * the retry makes the create provably collision-proof.
+ * data imports). With the row lock held that should never be needed, but the
+ * retry makes the create provably collision-proof.
  */
 export async function computeNextTaskCode(
   tx: Prisma.TransactionClient,
   verticalId: string,
   verticalCode: string,
 ): Promise<string> {
-  // Per-vertical advisory lock. hashtext() returns int4; cast to bigint so the
-  // single-argument pg_advisory_xact_lock(bigint) overload is selected even
-  // behind a transaction-mode connection pooler.
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${verticalId})::bigint)`;
+  // Lock the Vertical row for the duration of this transaction.
+  // Concurrent creates against the same vertical block here until we commit;
+  // creates against different verticals proceed in parallel.
+  await tx.$queryRaw<unknown[]>`
+    SELECT id FROM "Vertical" WHERE id = ${verticalId} FOR UPDATE
+  `;
 
   const rows = await tx.task.findMany({
     where: { verticalId },

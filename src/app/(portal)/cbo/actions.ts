@@ -229,7 +229,7 @@ export async function activateParkingItemAsTaskAction(
           data: { decision: "Activate" },
         });
         return t;
-      });
+      }, { maxWait: 30_000, timeout: 30_000 });
       lastErr = null;
       break;
     } catch (err: unknown) {

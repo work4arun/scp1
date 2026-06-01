@@ -225,7 +225,7 @@ export async function activateInstructionAsTaskAction(
           },
         });
         return t;
-      });
+      }, { maxWait: 30_000, timeout: 30_000 });
       lastErr = null;
       break;
     } catch (err: unknown) {

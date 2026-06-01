@@ -146,7 +146,7 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
             lastUpdateAt: new Date(),
           },
         });
-      });
+      }, { maxWait: 30_000, timeout: 30_000 });
       lastErr = null;
       break; // success
     } catch (err: unknown) {
