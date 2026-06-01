@@ -313,41 +313,50 @@ async function main() {
   }
   console.log(`✓ ${seedUsers.length} default users seeded`);
 
-  // Tasks
-  const verticalCounter = new Map<string, number>();
+  // Tasks — only seed on a truly empty task table.
+  //
+  // The seed counter always restarts from 001, so if user-created tasks already
+  // exist (e.g. MKT-048 after 47 seed rows + 1 real task) a re-seed would try
+  // to re-insert MKT-001…MKT-047 (no-ops via upsert) but the counter collision
+  // with real tasks grows over time and causes "unique task code" P2002 errors.
+  // Skipping task seeding when tasks already exist makes re-seeds fully safe.
+  const existingTaskCount = await prisma.task.count();
   let createdTaskCount = 0;
-  for (const t of TASKS) {
-    const verticalId = verticalMap.get(t.vertical)!;
-    const subVerticalId = t.subVertical ? subMap.get(`${t.vertical}::${t.subVertical}`) : null;
-    const priorityId = priorityMap.get(t.priority)!;
-    const ownerRoleId = t.ownerRole ? roleMap.get(t.ownerRole) : null;
+  if (existingTaskCount === 0) {
+    const verticalCounter = new Map<string, number>();
+    for (const t of TASKS) {
+      const verticalId = verticalMap.get(t.vertical)!;
+      const subVerticalId = t.subVertical ? subMap.get(`${t.vertical}::${t.subVertical}`) : null;
+      const priorityId = priorityMap.get(t.priority)!;
+      const ownerRoleId = t.ownerRole ? roleMap.get(t.ownerRole) : null;
 
-    const seq = (verticalCounter.get(t.vertical) ?? 0) + 1;
-    verticalCounter.set(t.vertical, seq);
-    const code = `${t.vertical}-${String(seq).padStart(3, "0")}`;
+      const seq = (verticalCounter.get(t.vertical) ?? 0) + 1;
+      verticalCounter.set(t.vertical, seq);
+      const code = `${t.vertical}-${String(seq).padStart(3, "0")}`;
 
-    await prisma.task.upsert({
-      where: { code },
-      update: {},
-      create: {
-        code,
-        title: t.title,
-        verticalId,
-        subVerticalId: subVerticalId ?? undefined,
-        priorityId,
-        ownerRoleId: ownerRoleId ?? undefined,
-        createdById: smUserId,
-        status: t.status ?? "NOT_STARTED",
-        source: t.source ?? "SELF_STRATEGY",
-        intervention: t.intervention ?? "NO",
-        frequency: t.frequency,
-        expectedOutput: t.expectedOutput,
-        lastUpdateAt: new Date(),
-      },
-    });
-    createdTaskCount++;
+      await prisma.task.create({
+        data: {
+          code,
+          title: t.title,
+          verticalId,
+          subVerticalId: subVerticalId ?? undefined,
+          priorityId,
+          ownerRoleId: ownerRoleId ?? undefined,
+          createdById: smUserId,
+          status: t.status ?? "NOT_STARTED",
+          source: t.source ?? "SELF_STRATEGY",
+          intervention: t.intervention ?? "NO",
+          frequency: t.frequency,
+          expectedOutput: t.expectedOutput,
+          lastUpdateAt: new Date(),
+        },
+      });
+      createdTaskCount++;
+    }
+    console.log(`✓ ${createdTaskCount} tasks seeded`);
+  } else {
+    console.log(`⏭  task seeding skipped — ${existingTaskCount} task(s) already exist`);
   }
-  console.log(`✓ ${createdTaskCount} tasks seeded`);
 
   // Feature flags — bootstrap the registry so the Super Admin UI works on first
   // visit. We only set defaults on insert; existing rows are left alone so the

@@ -26,17 +26,19 @@ else
   npx prisma db push
 fi
 
-# Seed by default. The seed script is idempotent (upserts users, verticals,
-# priorities and feature-flag rows) so it's safe to re-run on every boot.
-# Previously SCP_SEED defaulted to 0, which meant fresh deployments never had
-# the FeatureFlag table populated — that silently disabled bulk-task actions
-# and a number of UX features. Set SCP_SEED=0 only if you intentionally want
-# to skip the seeder.
+# Seed control. The seed handles users, verticals, priorities, feature flags,
+# and initial tasks. Task seeding is now guarded — it only runs on a completely
+# empty task table so re-seeds never collide with user-created task codes.
+#
+# Default is SCP_SEED=1 so the very first boot populates all reference data
+# and feature flags automatically. On subsequent boots the seed is safe to
+# re-run (it skips tasks if any exist) but you can set SCP_SEED=0 to skip it
+# entirely if you want faster container startup in production.
 if [ "${SCP_SEED:-1}" = "1" ]; then
-  echo "[scp] SCP_SEED=1 -> running seed (idempotent)..."
+  echo "[scp] SCP_SEED=1 -> running seed..."
   npm run db:seed || echo "[scp] Seed step finished with non-zero exit; continuing."
 else
-  echo "[scp] SCP_SEED=0 -> skipping seed (explicit override)."
+  echo "[scp] SCP_SEED=0 -> skipping seed."
 fi
 
 echo "[scp] Starting Next.js..."
