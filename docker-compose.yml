@@ -1,12 +1,64 @@
-# ── Listmonk (email sending) — uses the existing local Postgres server ──
-# Run: docker compose up -d
-# Admin UI: http://localhost:9000
-# Default login: admin / listmonk (change after first login)
+# Strategic Control Portal — production stack with Listmonk email
+#
+# Services: db (Postgres 16), app (Next.js), listmonk (email campaigns)
+# All on a private network. App on port 80, Listmonk on port 9000.
 
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: scp-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-scp_db}
+      POSTGRES_USER: ${POSTGRES_USER:-scp_user1}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    volumes:
+      - scp_pgdata:/var/lib/postgresql/data
+    networks:
+      - scp_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-scp_user1} -d ${POSTGRES_DB:-scp_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: scp-app:latest
+    container_name: scp-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-scp_user1}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-scp_db}?schema=public"
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET must be set in .env}
+      AUTH_TRUST_HOST: "true"
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost}
+      NODE_ENV: production
+      PORT: "3000"
+      SCP_SEED: ${SCP_SEED:-0}
+      LISTMONK_URL: ${LISTMONK_URL:-http://listmonk:9000}
+      LISTMONK_API_USER: ${LISTMONK_API_USER:-admin}
+      LISTMONK_API_PASSWORD: ${LISTMONK_API_PASSWORD:-listmonk}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-}
+    ports:
+      - "80:3000"
+    networks:
+      - scp_net
+
   listmonk:
     image: listmonk/listmonk:latest
-    container_name: listmonk_app
+    container_name: scp-listmonk
     restart: unless-stopped
     ports:
       - "9000:9000"
@@ -16,33 +68,30 @@ services:
     command: [sh, -c, "./listmonk --install --idempotent --yes --config '' && ./listmonk --upgrade --yes --config '' && ./listmonk --config ''"]
     environment:
       LISTMONK_app__address: 0.0.0.0:9000
-      LISTMONK_db__user: postgres
-      LISTMONK_db__password: postgres
+      LISTMONK_db__user: ${POSTGRES_USER:-scp_user1}
+      LISTMONK_db__password: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       LISTMONK_db__database: listmonk
-      LISTMONK_db__host: host.docker.internal     # reach the host's Postgres from inside the container
+      LISTMONK_db__host: db
       LISTMONK_db__port: 5432
       LISTMONK_db__ssl_mode: disable
       LISTMONK_db__max_open: 25
       LISTMONK_db__max_idle: 25
       LISTMONK_db__max_lifetime: 300s
       TZ: Etc/UTC
-      LISTMONK_ADMIN_USER: admin
-      LISTMONK_ADMIN_PASSWORD: listmonk
+      LISTMONK_ADMIN_USER: ${LISTMONK_ADMIN_USER:-admin}
+      LISTMONK_ADMIN_PASSWORD: ${LISTMONK_ADMIN_PASSWORD:-listmonk}
     volumes:
-      - ./listmonk-uploads:/listmonk/uploads:rw
-    extra_hosts:
-      - "host.docker.internal:host-gateway"       # allows reaching localhost:5432 from the container
+      - listmonk_uploads:/listmonk/uploads:rw
+    networks:
+      - scp_net
 
-  # Health-check helper — pings the host Postgres to gate listmonk startup
-  db:
-    image: postgres:17-alpine
-    container_name: listmonk_db_check
-    restart: "no"
-    command: >
-      sh -c "
-      echo 'Waiting for Postgres on host.docker.internal:5432...';
-      until pg_isready -h host.docker.internal -p 5432 -U postgres; do sleep 2; done;
-      echo 'Postgres is ready.';
-      "
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+volumes:
+  scp_pgdata:
+    name: scp_pgdata
+  listmonk_uploads:
+    name: listmonk_uploads
+
+networks:
+  scp_net:
+    name: scp_net
+    driver: bridge

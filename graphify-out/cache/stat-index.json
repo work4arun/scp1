@@ -1,0 +1,62 @@
+{
+    "D:\\college-projects\\strategic-control-system\\package.json": {
+        "size": 1761,
+        "mtime_ns": 1781166214384275200,
+        "hash": "81b192bde06ff0904faa91bc2ebc78fa795e6d7d4286c06dfeba3f832db71713"
+    },
+    "D:\\college-projects\\strategic-control-system\\scp-deploy\\deploy.sh": {
+        "size": 11622,
+        "mtime_ns": 1781166214388115300,
+        "hash": "c15060caef3b28e4b7d533cb1af0ab648e21d18700751bed9b03a727a7f86906"
+    },
+    "D:\\college-projects\\strategic-control-system\\scp-deploy\\docker\\entrypoint.sh": {
+        "size": 1724,
+        "mtime_ns": 1781166214390808600,
+        "hash": "c953b34f8dc03da6c693e7dd093d5f6cfa03b5143fa8129a287c7de8d6e22403"
+    },
+    "D:\\college-projects\\strategic-control-system\\setup.sh": {
+        "size": 4762,
+        "mtime_ns": 1781166214390808600,
+        "hash": "063ae63b44bc2e257ba20c6c02327f3554888428880e584a3c72bfd64ecb2689"
+    },
+    "D:\\college-projects\\strategic-control-system\\tsconfig.json": {
+        "size": 620,
+        "mtime_ns": 1781166214467424400,
+        "hash": "388d89d1dad01aaec8bfed5c158ce49806e36a85225d9a218e3ed036920cb520"
+    },
+    "D:\\college-projects\\strategic-control-system\\.github\\copilot-instructions.md": {
+        "size": 1031,
+        "mtime_ns": 1781173046127919800,
+        "hash": "60002a01d6fc22147e2994d1a1a447d5e577c02aed2443789af20571ec2d2a19"
+    },
+    "D:\\college-projects\\strategic-control-system\\DEPLOYMENT.md": {
+        "size": 13609,
+        "mtime_ns": 1781166214377302500,
+        "hash": "add122a08bc42b5f96805cf2686bc903d598ee45f0f89789e8c8f0134473f594"
+    },
+    "D:\\college-projects\\strategic-control-system\\DEPLOYMENT_GUIDE.md": {
+        "size": 15476,
+        "mtime_ns": 1781166214377302500,
+        "hash": "642e4325d6571d340bd37b1c761f5b5a6d38a121be8576789366a6434ea08de3"
+    },
+    "D:\\college-projects\\strategic-control-system\\DIAGNOSIS_REPORT.md": {
+        "size": 25383,
+        "mtime_ns": 1781166214377302500,
+        "hash": "ff90bc3cadff38459110195625b1d2afb6d3da9b352b0c514fa73f2448bc8ae7"
+    },
+    "D:\\college-projects\\strategic-control-system\\README.md": {
+        "size": 10189,
+        "mtime_ns": 1781166214377302500,
+        "hash": "33dc76774fdce5c88fd2dc52c84b333d1930ae753e8944da2b8f339c084e8866"
+    },
+    "D:\\college-projects\\strategic-control-system\\scp-deploy\\DEPLOY.md": {
+        "size": 7589,
+        "mtime_ns": 1781166214388115300,
+        "hash": "7e6c068d0d17fd53b390e942d16f89d04feb12a038d747c309649b04bf51bd95"
+    },
+    "D:\\college-projects\\strategic-control-system\\scp-deploy\\docker-compose.yml": {
+        "size": 2482,
+        "mtime_ns": 1781166214389855800,
+        "hash": "7b97f1d4b109e8f411cc8fd1819b151d4a8b7ee9200edfffbd0cede2158bd58b"
+    }
+}

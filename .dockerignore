@@ -1,11 +1,6 @@
 # ─────────────────────────────────────────────────────────────────────────────
 #  .dockerignore — what Docker should NEVER copy into the build context
 # ─────────────────────────────────────────────────────────────────────────────
-#  Without this file the build context can balloon by ~1 GB+:
-#    node_modules (~800 MB), .next (~230 MB), .git (~80 MB), tsbuildinfo (~115 KB)
-#  That bloats the layer cache and can cause `ENOSPC: no space left on device`
-#  on disk-constrained hosts. Keep this file in sync with the one in scp-deploy/.
-# ─────────────────────────────────────────────────────────────────────────────
 
 # Dependencies — installed fresh inside the image
 node_modules
@@ -18,7 +13,7 @@ dist
 build
 coverage
 
-# TypeScript incremental cache — useless inside the container
+# TypeScript incremental cache
 tsconfig.tsbuildinfo
 *.tsbuildinfo
 
@@ -27,7 +22,7 @@ tsconfig.tsbuildinfo
 .gitignore
 .gitattributes
 
-# Local env files — secrets must come from compose / runtime env, NOT the image
+# Local env files — secrets must come from compose / runtime env
 .env
 .env.*
 !.env.example
@@ -55,7 +50,7 @@ DIAGNOSIS_REPORT.md
 *.md
 !prisma/**/*.md
 
-# Tests and CI metadata (none today, but future-proofing)
+# Tests and CI metadata
 .github
 .circleci
 .gitlab-ci.yml
@@ -67,9 +62,6 @@ __tests__
 *.spec.ts
 *.spec.tsx
 
-# Deploy directory — Dockerfile / compose / entrypoint are copied in separately
-scp-deploy
-
 # Misc
 .npm
 .cache
@@ -79,7 +71,13 @@ scp-deploy
 tmp
 temp
 
-# Don't include the dockerignore or the Dockerfile itself in the image layers
+# Graphify analysis
+graphify-out
+
+# Docker stuff itself
 .dockerignore
 Dockerfile
 docker-compose.yml
+
+# Obsolete deploy folder (files now at root)
+scp-deploy
