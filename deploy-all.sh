@@ -206,6 +206,22 @@ build_and_start() {
   export DOCKER_BUILDKIT=1
   export COMPOSE_DOCKER_CLI_BUILD=1
 
+  # ── Check if DB credentials changed and warn about stale volume ──
+  local current_user current_pass
+  current_user=$(grep "^POSTGRES_USER=" .env 2>/dev/null | cut -d= -f2 || true)
+  current_pass=$(grep "^POSTGRES_PASSWORD=" .env 2>/dev/null | cut -d= -f2 || true)
+
+  if docker volume inspect scp_pgdata >/dev/null 2>&1; then
+    if [ "${current_user}" != "" ] && [ "${current_user}" != "scp" ]; then
+      log "⚠️  WARNING: DB user '${current_user}' differs from the default."
+      log "    The existing Docker volume (scp_pgdata) may contain data from a previous"
+      log "    deployment with a different user. If you are re-deploying with NEW"
+      log "    credentials, drop the old volume first:"
+      log "      cd ${APP_DIR} && docker compose down -v && ./deploy-all.sh"
+      log "    (This deletes ALL existing data — only do this on first deploy or if data loss is acceptable)"
+    fi
+  fi
+
   log "Building Docker images (this may take a few minutes on first run) ..."
   docker compose build app 2>&1 | tail -5
 
