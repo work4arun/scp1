@@ -133,13 +133,9 @@ build_and_start() {
 # ──────────────────────────────────────────────────────────────────────────────
 setup_databases() {
   cd "${SCRIPT_DIR}"
-  log "Creating databases..."
-  docker compose exec -T db psql -U postgres -d postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname='${DB_USER}') THEN CREATE ROLE ${DB_USER} LOGIN PASSWORD '${DB_PASS}'; END IF; END \$\$;" 2>/dev/null || true
-  docker compose exec -T db psql -U postgres -d postgres -c "ALTER ROLE ${DB_USER} CREATEDB;" 2>/dev/null || true
-  docker compose exec -T db psql -U postgres -d postgres -c "CREATE DATABASE ${DB_NAME};" 2>/dev/null || true
-  docker compose exec -T db psql -U postgres -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};" 2>/dev/null || true
-  docker compose exec -T db psql -U postgres -d postgres -c "CREATE DATABASE listmonk;" 2>/dev/null || true
-  docker compose exec -T db psql -U postgres -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE listmonk TO ${DB_USER};" 2>/dev/null || true
+  log "Creating databases (using ${DB_USER} as admin)..."
+  docker compose exec -T db psql -U "${DB_USER}" -d postgres -c "CREATE DATABASE ${DB_NAME};" 2>/dev/null || log "${DB_NAME} already exists."
+  docker compose exec -T db psql -U "${DB_USER}" -d postgres -c "CREATE DATABASE listmonk;" 2>/dev/null || log "listmonk already exists."
   log "Databases ready."
 }
 

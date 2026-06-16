@@ -18,7 +18,7 @@ DB_PASS=$(echo "${DATABASE_URL}" | sed -n 's|.*://[^:]*:\([^@]*\).*|\1|p')
 DB_NAME=$(echo "${DATABASE_URL}" | sed -n 's|.*/\([^?]*\).*|\1|p')
 
 export PGPASSWORD="${DB_PASS}"
-PSQL="psql -h ${DB_HOST} -p ${DB_PORT} -U postgres -d postgres"
+PSQL="psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d postgres"
 
 echo "[scp] DB target: host=${DB_HOST} port=${DB_PORT} user=${DB_USER} db=${DB_NAME}"
 
@@ -31,14 +31,10 @@ done
 echo "[scp] Postgres is reachable."
 
 # ── Create user/role if it doesn't exist ─────────────────────────────────────
-echo "[scp] Ensuring user '${DB_USER}' exists ..."
-${PSQL} -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '${DB_USER}') THEN CREATE ROLE ${DB_USER} LOGIN PASSWORD '${DB_PASS}'; END IF; END \$\$;" 2>/dev/null || echo "[scp] User ${DB_USER} already exists or creation skipped."
-
-# ── Grant createdb privilege and create database ─────────────────────────────
-${PSQL} -c "ALTER ROLE ${DB_USER} CREATEDB;" 2>/dev/null || true
 echo "[scp] Ensuring database '${DB_NAME}' exists ..."
 ${PSQL} -c "CREATE DATABASE ${DB_NAME};" 2>/dev/null || echo "[scp] Database '${DB_NAME}' already exists."
-${PSQL} -c "GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};" 2>/dev/null || true
+echo "[scp] Ensuring database 'listmonk' exists ..."
+${PSQL} -c "CREATE DATABASE listmonk;" 2>/dev/null || echo "[scp] Database 'listmonk' already exists."
 
 # ── Wait for the app database specifically ───────────────────────────────────
 echo "[scp] Verifying app database '${DB_NAME}' is accessible ..."
