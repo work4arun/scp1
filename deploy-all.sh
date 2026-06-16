@@ -123,25 +123,23 @@ build_and_start() {
   cd "${SCRIPT_DIR}"
   export DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1
 
-  if docker volume inspect scp_pgdata >/dev/null 2>&1; then
-    log "Existing Postgres volume found. Ensuring new DB user will be created..."
-  fi
+  log "Building Docker images..."
+  docker compose build 2>&1 | tail -3
 
-  log "Building Docker image..."
-  docker compose build app 2>&1 | tail -3
+  # Start DB first, wait for healthy, create databases, THEN start others
+  log "Starting Postgres first..."
+  docker compose up -d db
+  log "Waiting for Postgres to be healthy..."
+  until docker compose exec -T db psql -U "${DB_USER}" -d postgres -c "SELECT 1" >/dev/null 2>&1; do sleep 2; done
 
-  log "Starting containers (db, app, listmonk)..."
+  log "Creating databases..."
+  docker compose exec -T db psql -U "${DB_USER}" -d postgres -c "CREATE DATABASE ${DB_NAME};" 2>/dev/null || true
+  docker compose exec -T db psql -U "${DB_USER}" -d postgres -c "CREATE DATABASE listmonk;" 2>/dev/null || true
+
+  # Now start app + listmonk
+  log "Starting app + listmonk containers..."
   docker compose up -d
-  sleep 5
-}
-
-# ──────────────────────────────────────────────────────────────────────────────
-setup_databases() {
-  cd "${SCRIPT_DIR}"
-  log "Creating databases (using ${DB_USER} as admin)..."
-  docker compose exec -T db psql -U "${DB_USER}" -d postgres -c "CREATE DATABASE ${DB_NAME};" 2>/dev/null || log "${DB_NAME} already exists."
-  docker compose exec -T db psql -U "${DB_USER}" -d postgres -c "CREATE DATABASE listmonk;" 2>/dev/null || log "listmonk already exists."
-  log "Databases ready."
+  sleep 3
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -169,5 +167,5 @@ summary() {
   log ""
 }
 
-main() { install_deps; pull_code; setup_env; build_and_start; setup_databases; health_check; summary; }
+main() { install_deps; pull_code; setup_env; build_and_start; health_check; summary; }
 main "$@"
