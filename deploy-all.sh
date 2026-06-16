@@ -78,7 +78,8 @@ pull_code() {
 
 # ──────────────────────────────────────────────────────────────────────────────
 setup_env() {
-  cd "${SCRIPT_DIR}"
+  # Navigate to the target application directory where docker-compose runs
+  cd "${APP_DIR:-${SCRIPT_DIR}}"
 
   if [ -z "${PUBLIC_IP}" ]; then
     PUBLIC_IP=$(curl -s --max-time 5 http://checkip.amazonaws.com 2>/dev/null || curl -s --max-time 5 https://ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
@@ -94,6 +95,10 @@ setup_env() {
 POSTGRES_DB=${DB_NAME}
 POSTGRES_USER=${DB_USER}
 POSTGRES_PASSWORD=${DB_PASS}
+
+# Fixed Connection String for Prisma Engine
+DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@db:5432/${DB_NAME}?schema=public"
+
 AUTH_SECRET=${AUTH_SECRET}
 NEXTAUTH_URL=http://${PUBLIC_IP}
 SCP_SEED=1
@@ -110,7 +115,7 @@ SMTP_PASS=
 SMTP_FROM=
 NEXT_PUBLIC_APP_URL=http://${PUBLIC_IP}
 ENVEOF
-  log ".env created. DB=${DB_NAME} User=${DB_USER}"
+  log ".env created successfully. DB=${DB_NAME} User=${DB_USER}"
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
