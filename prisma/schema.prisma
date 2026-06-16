@@ -155,6 +155,15 @@ model FeatureFlag {
   @@index([category])
 }
 
+// ── Listmonk Email Configuration ──
+model ListmonkConfig {
+  id        String   @id @default("default") // singleton — always "default"
+  userId    String
+  apiKey    String
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+}
+
 // ────────────────────────────────────────────────────────────
 // Verticals & Sub-Verticals
 // ────────────────────────────────────────────────────────────

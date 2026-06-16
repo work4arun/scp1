@@ -39,6 +39,7 @@ const ADMIN_NAV_ITEMS: NavItem[] = [
   { href: "/admin/audit", label: "Audit Log", icon: History },
   { href: "/admin/features", label: "Feature Flags", icon: ToggleLeft },
   { href: "/admin/teams", label: "Teams", icon: Users },
+  { href: "/admin/emails", label: "Emails", icon: Mail },
   { href: "/admin/backup", label: "Backup & Restore", icon: Database },
 ];
 

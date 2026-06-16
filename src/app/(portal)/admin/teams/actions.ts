@@ -46,6 +46,33 @@ export async function upsertTeamAction(formData: FormData): Promise<TeamResult> 
   return { success: true };
 }
 
+// ────────── Listmonk Config ──────────
+export type ListmonkConfigResult = { success: true } | { success: false; error: string };
+
+export async function saveListmonkConfigAction(formData: FormData): Promise<ListmonkConfigResult> {
+  const authed = await ensureAdmin();
+  if (!authed.ok) return { success: false, error: authed.error };
+
+  const userId = String(formData.get("userId") || "").trim();
+  const apiKey = String(formData.get("apiKey") || "").trim();
+
+  if (!userId || !apiKey) return { success: false, error: "Both username and API key are required." };
+
+  try {
+    await prisma.listmonkConfig.upsert({
+      where: { id: "default" },
+      update: { userId, apiKey, updatedBy: authed.userId },
+      create: { id: "default", userId, apiKey, updatedBy: authed.userId },
+    });
+  } catch (err) {
+    console.error("[saveListmonkConfigAction] DB error", err);
+    return { success: false, error: friendlyPrismaError(err) ?? "Could not save credentials." };
+  }
+
+  revalidatePath("/admin/teams");
+  return { success: true };
+}
+
 export async function deleteTeamAction(id: string): Promise<TeamResult> {
   const authed = await ensureAdmin();
   if (!authed.ok) return { success: false, error: authed.error };

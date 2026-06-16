@@ -5,6 +5,7 @@ import { canConfigureSystem } from "@/lib/rbac";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TeamForm, TeamRow } from "./team-client";
+import { ListmonkConfigForm } from "./listmonk-form";
 
 export default async function TeamsAdmin() {
   const session = await auth();
@@ -17,6 +18,8 @@ export default async function TeamsAdmin() {
       taskAssignments: true,
     },
   });
+
+  const listmonkConfig = await prisma.listmonkConfig.findUnique({ where: { id: "default" } });
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -52,6 +55,14 @@ export default async function TeamsAdmin() {
               }}
             />
           ))}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle>Listmonk Email Configuration</CardTitle></CardHeader>
+        <CardContent>
+          <ListmonkConfigForm
+            initial={listmonkConfig ? { userId: listmonkConfig.userId, apiKey: listmonkConfig.apiKey } : undefined}
+          />
         </CardContent>
       </Card>
     </div>
