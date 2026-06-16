@@ -4,237 +4,50 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { canManageTasks } from "@/lib/rbac";
 import { PageHeader } from "@/components/page-header";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatusBadge, PriorityBadge } from "@/components/status-badges";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Plus, Download } from "lucide-react";
-import { BulkTaskList } from "./bulk-list";
-import type { TaskStatus, Prisma } from "@prisma/client";
-import { isEnabled } from "@/lib/features";
+import { formatRelative } from "@/lib/utils";
+import { Plus } from "lucide-react";
+import { TaskFilterBar } from "@/app/(portal)/cbo/task-filter-bar";
+import { TaskNotePanel } from "@/app/(portal)/cbo/task-note-panel";
+import { buildTaskWhere, type TaskFilterParams } from "@/app/(portal)/cbo/task-filter-utils";
 
-export default async function SmTasks({
-  searchParams,
-}: {
-  searchParams: { vertical?: string; priority?: string; status?: string; q?: string; page?: string; dateType?: string; dateFrom?: string; dateTo?: string };
-}) {
+export default async function TasksPage({ searchParams }: { searchParams: TaskFilterParams }) {
   const session = await auth();
   if (!canManageTasks(session?.user.systemRole)) redirect("/");
 
-  // Tasks are hard-deleted now, but rows soft-deleted under the old "Dropped"
-  // flow may still exist in the database. Hide them from the active register.
-  const where: Prisma.TaskWhereInput = { status: { not: "DROPPED" } };
-  if (searchParams.vertical) where.vertical = { code: searchParams.vertical };
-  if (searchParams.priority) where.priority = { code: searchParams.priority };
-  if (searchParams.status) where.status = searchParams.status as TaskStatus;
-  if (searchParams.q) where.title = { contains: searchParams.q, mode: "insensitive" };
+  const filterWhere = buildTaskWhere(searchParams);
+  const where = { AND: [{ status: { not: "DROPPED" } as const }, filterWhere] };
 
-  const ISO = /^\d{4}-\d{2}-\d{2}$/;
-  const hasFrom = searchParams.dateFrom && ISO.test(searchParams.dateFrom);
-  const hasTo   = searchParams.dateTo   && ISO.test(searchParams.dateTo);
-
-  if (searchParams.dateType && (hasFrom || hasTo)) {
-    const rangeFilter: { gte?: Date; lt?: Date } = {};
-    if (hasFrom) rangeFilter.gte = new Date(`${searchParams.dateFrom}T00:00:00.000Z`);
-    if (hasTo) {
-      const toEnd = new Date(`${searchParams.dateTo}T00:00:00.000Z`);
-      toEnd.setUTCDate(toEnd.getUTCDate() + 1);
-      rangeFilter.lt = toEnd;
-    }
-    if (searchParams.dateType === "assigned") {
-      where.createdAt = rangeFilter;
-    } else if (searchParams.dateType === "deadline_exact") {
-      where.deadline = rangeFilter;
-    }
-  }
-
-  // Feature flags
-  const [paginationEnabled, bulkActionsEnabled, csvEnabled, dropReasonEnabled] = await Promise.all([
-    isEnabled("task_pagination"),
-    isEnabled("task_bulk_actions"),
-    isEnabled("csv_export"),
-    isEnabled("drop_reason"),
-  ]);
-
-  // Pagination — when the flag is on we use offset-based paging (page=N, 50/page).
-  // When OFF we keep the legacy single-page-of-200 behaviour.
-  const PAGE_SIZE = 50;
-  const pageNumber = Math.max(1, parseInt(searchParams.page || "1", 10) || 1);
-  const skip = paginationEnabled ? (pageNumber - 1) * PAGE_SIZE : 0;
-  const take = paginationEnabled ? PAGE_SIZE : 200;
-
-  const [tasks, totalActive, verticals, priorities, ownerRoles] = await Promise.all([
-    prisma.task.findMany({
-      where,
-      orderBy: [{ priority: { rank: "asc" } }, { updatedAt: "desc" }],
-      include: { vertical: true, priority: true, ownerRole: true, subVertical: true },
-      skip,
-      take,
-    }),
-    paginationEnabled ? prisma.task.count({ where }) : Promise.resolve(0),
+  const [tasks, verticals, subVerticals, priorities, teams] = await Promise.all([
+    prisma.task.findMany({ where, orderBy: [{ priority: { rank: "asc" } }, { updatedAt: "desc" }], include: { vertical: true, subVertical: true, priority: true, teamAssignments: { include: { team: true } }, assignees: { include: { member: true } }, cboNotes: { orderBy: { createdAt: "desc" }, include: { author: { select: { name: true } } } } } }),
     prisma.vertical.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
+    prisma.subVertical.findMany({ where: { active: true }, orderBy: [{ vertical: { sortOrder: "asc" } }, { sortOrder: "asc" }], include: { vertical: { select: { code: true } } } }),
     prisma.priority.findMany({ where: { active: true }, orderBy: { rank: "asc" } }),
-    prisma.ownerRole.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
+    prisma.team.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
   ]);
 
-  const totalPages = paginationEnabled ? Math.max(1, Math.ceil(totalActive / PAGE_SIZE)) : 1;
-
-  // Preserve filters when building pagination + export links
-  const queryString = new URLSearchParams();
-  if (searchParams.vertical) queryString.set("vertical", searchParams.vertical);
-  if (searchParams.priority) queryString.set("priority", searchParams.priority);
-  if (searchParams.status) queryString.set("status", searchParams.status);
-  if (searchParams.q) queryString.set("q", searchParams.q);
-  if (searchParams.dateType)  queryString.set("dateType",  searchParams.dateType);
-  if (searchParams.dateFrom)  queryString.set("dateFrom",  searchParams.dateFrom);
-  if (searchParams.dateTo)    queryString.set("dateTo",    searchParams.dateTo);
-  const baseQs = queryString.toString();
-
-  const rows = tasks.map((t) => ({
-    id: t.id,
-    code: t.code,
-    title: t.title,
-    vertical: t.vertical.name,
-    subVertical: t.subVertical?.name || null,
-    ownerRole: t.ownerRole?.name || null,
-    priority: t.priority.code,
-    status: t.status,
-    updatedAt: (t.lastUpdateAt || t.updatedAt).toISOString(),
-  }));
+  const rows = tasks.map((t) => ({ id: t.id, code: t.code, title: t.title, verticalName: t.vertical.name, verticalCode: t.vertical.code, subVerticalName: t.subVertical?.name || "—", priorityLabel: t.priority.label, priorityCode: t.priority.code, status: t.status, assigneeNames: t.teamAssignments.length > 0 ? t.teamAssignments.map((ta) => `[${ta.team.name}]`).join(", ") : t.assignees.map((a) => a.member.name).join(", ") || "—", updatedAt: t.updatedAt, lastUpdateAt: t.lastUpdateAt }));
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <PageHeader
-        title="Task Register"
-        description={
-          paginationEnabled
-            ? `${totalActive} active task${totalActive === 1 ? "" : "s"} · page ${pageNumber} of ${totalPages}`
-            : `${tasks.length} active task${tasks.length === 1 ? "" : "s"}`
-        }
-        action={
-          <div className="flex flex-wrap gap-2">
-            {csvEnabled && (
-              <Button asChild variant="outline" size="sm">
-                <Link href={`/api/export/tasks${baseQs ? `?${baseQs}` : ""}`}>
-                  <Download className="h-4 w-4" /> Export CSV
-                </Link>
-              </Button>
-            )}
-            <Button asChild size="lg">
-              <Link href="/sm/new-task"><Plus className="h-4 w-4" /> New task</Link>
-            </Button>
-          </div>
-        }
-      />
-
-      <Card>
-        <CardContent className="p-4 space-y-3">
-          <form className="space-y-3">
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <div className="space-y-1">
-                <Label>Search</Label>
-                <Input name="q" defaultValue={searchParams.q || ""} placeholder="Title…" />
-              </div>
-              <div className="space-y-1">
-                <Label>Vertical</Label>
-                <Select name="vertical" defaultValue={searchParams.vertical || ""}>
-                  <option value="">All</option>
-                  {verticals.map((v) => <option key={v.id} value={v.code}>{v.name}</option>)}
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label>Priority</Label>
-                <Select name="priority" defaultValue={searchParams.priority || ""}>
-                  <option value="">All</option>
-                  {priorities.map((p) => <option key={p.id} value={p.code}>{p.code} — {p.label}</option>)}
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label>Status</Label>
-                <Select name="status" defaultValue={searchParams.status || ""}>
-                  <option value="">All (active)</option>
-                  <option value="NOT_STARTED">Not Started</option>
-                  <option value="IN_PROGRESS">In Progress</option>
-                  <option value="WAITING_FOR_INPUT">Waiting Input</option>
-                  <option value="WAITING_FOR_APPROVAL">Waiting Approval</option>
-                  <option value="DELAYED">Delayed</option>
-                  <option value="COMPLETED">Completed</option>
-                  <option value="PARKED">Parked</option>
-                </Select>
+      <PageHeader title="Tasks" description="All active tasks across verticals." action={<Button asChild size="lg"><Link href="/sm/new-task"><Plus className="h-4 w-4" /> New task</Link></Button>} />
+      <TaskFilterBar active={searchParams as Record<string, string | undefined>} basePath="/sm/tasks" options={{ verticals: verticals.map((v) => ({ id: v.id, code: v.code, name: v.name })), subVerticals: subVerticals.map((s) => ({ id: s.id, name: s.name, verticalCode: s.vertical.code })), priorities: priorities.map((p) => ({ id: p.id, code: p.code, label: p.label })), teams: teams.map((t) => ({ id: t.id, name: t.name })) }} />
+      <Card><CardHeader><CardTitle>{rows.length} task{rows.length !== 1 ? "s" : ""}</CardTitle></CardHeader><CardContent className="space-y-2">
+        {rows.length === 0 ? <div className="text-sm text-muted-foreground py-6 text-center">No tasks found.</div> : rows.map((r) => {
+          const task = tasks.find((t) => t.id === r.id);
+          const notes = task ? task.cboNotes.map(({ audioBytes, ...n }: any) => ({ ...n, audioBase64: audioBytes ? Buffer.from(audioBytes).toString("base64") : null })) : [];
+          return (
+            <div key={r.id} className="rounded-lg border border-border p-3 hover:bg-accent transition-colors">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <Link href={`/sm/tasks/${r.id}`} className="min-w-0 flex-1"><div className="text-sm font-semibold truncate">{r.title}</div><div className="text-xs text-muted-foreground truncate">{r.code} · {r.verticalName} · {r.assigneeNames} · {formatRelative(r.lastUpdateAt || r.updatedAt)}</div></Link>
+                <div className="flex flex-col gap-1 shrink-0 items-end"><div className="flex gap-1.5"><PriorityBadge code={r.priorityCode} /><StatusBadge status={r.status} /></div><TaskNotePanel taskId={r.id} readOnly notes={notes} /></div>
               </div>
             </div>
-
-            {/* Date range filter */}
-            <div className="rounded-lg border border-dashed border-border bg-muted/30 p-3">
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <div className="space-y-1">
-                  <Label>Filter by date</Label>
-                  <Select name="dateType" defaultValue={searchParams.dateType || ""}>
-                    <option value="">— Select type —</option>
-                    <option value="assigned">Assigned Date</option>
-                    <option value="deadline_exact">Deadline Date</option>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label>From date</Label>
-                  <Input name="dateFrom" type="date" defaultValue={searchParams.dateFrom || ""} />
-                </div>
-                <div className="space-y-1">
-                  <Label>To date</Label>
-                  <Input name="dateTo" type="date" defaultValue={searchParams.dateTo || ""} />
-                </div>
-                <div className="text-xs text-muted-foreground self-end pb-1">
-                  {searchParams.dateType && (searchParams.dateFrom || searchParams.dateTo)
-                    ? <>{searchParams.dateType === "assigned" ? "Assigned" : "Deadline"}: <span className="font-semibold text-foreground">{searchParams.dateFrom || "any"}</span>{" → "}<span className="font-semibold text-foreground">{searchParams.dateTo || "any"}</span></>
-                    : "Select type, then set a From or To date"}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <Button asChild variant="outline" size="sm"><Link href="/sm/tasks">Reset</Link></Button>
-              <Button type="submit" size="sm">Apply filters</Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-
-      <BulkTaskList
-        tasks={rows}
-        ownerRoles={ownerRoles.map((r) => ({ id: r.id, name: r.name }))}
-        bulkActionsEnabled={bulkActionsEnabled}
-        dropReasonEnabled={dropReasonEnabled}
-      />
-
-      {paginationEnabled && totalPages > 1 && (
-        <nav className="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2 text-sm" aria-label="Pagination">
-          <div className="text-xs text-muted-foreground">
-            Showing {skip + 1}–{Math.min(skip + tasks.length, totalActive)} of {totalActive}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button asChild variant="outline" size="sm" disabled={pageNumber <= 1}>
-              <Link
-                href={`/sm/tasks?${new URLSearchParams({ ...(baseQs ? Object.fromEntries(new URLSearchParams(baseQs)) : {}), page: String(Math.max(1, pageNumber - 1)) }).toString()}`}
-                aria-disabled={pageNumber <= 1}
-              >
-                ← Previous
-              </Link>
-            </Button>
-            <span className="text-xs font-semibold">
-              {pageNumber} / {totalPages}
-            </span>
-            <Button asChild variant="outline" size="sm" disabled={pageNumber >= totalPages}>
-              <Link
-                href={`/sm/tasks?${new URLSearchParams({ ...(baseQs ? Object.fromEntries(new URLSearchParams(baseQs)) : {}), page: String(Math.min(totalPages, pageNumber + 1)) }).toString()}`}
-                aria-disabled={pageNumber >= totalPages}
-              >
-                Next →
-              </Link>
-            </Button>
-          </div>
-        </nav>
-      )}
+          );
+        })}
+      </CardContent></Card>
     </div>
   );
 }

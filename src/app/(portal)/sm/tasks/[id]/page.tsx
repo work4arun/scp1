@@ -8,7 +8,6 @@ import { StatusBadge, PriorityBadge } from "@/components/status-badges";
 import { Badge } from "@/components/ui/badge";
 import { formatRelative, formatDate } from "@/lib/utils";
 import { TaskUpdateForm } from "./update-form";
-import { EscalateForm } from "./escalate-form";
 import { TaskActions } from "./task-actions";
 
 export default async function TaskDetail({ params }: { params: { id: string } }) {
@@ -21,64 +20,54 @@ export default async function TaskDetail({ params }: { params: { id: string } })
       vertical: true,
       subVertical: true,
       priority: true,
-      ownerRole: true,
-      ownerUser: true,
-      subOwner: true,
+      teamAssignments: { include: { team: true } },
+      assignees: { include: { member: { include: { team: { select: { name: true } } } } } },
       updates: { orderBy: { createdAt: "desc" }, include: { author: true } },
-      interventions: { orderBy: { createdAt: "desc" } },
     },
   });
   if (!task) notFound();
 
-  const hasOpenEscalation = task.interventions.some((i) => !i.resolved);
+  const assignedTeamNames = task.teamAssignments.map((ta) => ta.team.name);
+  const assignedMembers = task.assignees.map((a) => ({
+    name: a.member.name,
+    email: a.member.email,
+    designation: a.member.designation,
+    teamName: a.member.team.name,
+    sendEmail: a.sendEmail,
+  }));
 
   return (
     <div className="space-y-6 animate-fade-in">
       <PageHeader
         title={task.title}
         description={`${task.code} · ${task.vertical.name}${task.subVertical ? ` · ${task.subVertical.name}` : ""}`}
-        action={
-          <TaskActions
-            taskId={task.id}
-            code={task.code}
-            hasOpenEscalation={hasOpenEscalation}
-            isSuperAdmin={session?.user.systemRole === "SUPER_ADMIN"}
-          />
-        }
+        action={<TaskActions taskId={task.id} code={task.code} isSuperAdmin={session?.user.systemRole === "SUPER_ADMIN"} />}
       />
 
       <div className="flex flex-wrap gap-2">
         <PriorityBadge code={task.priority.code} />
         <StatusBadge status={task.status} />
-        {task.intervention !== "NO" ? (
-          <Badge variant="warning">Dr. BN: {task.intervention === "YES" ? "Yes" : "Only if delayed"}</Badge>
-        ) : null}
+        {task.intervention !== "NO" ? <Badge variant="warning">Dr. BN: {task.intervention === "YES" ? "Yes" : "Only if delayed"}</Badge> : null}
         {task.frequency ? <Badge variant="info">{task.frequency}</Badge> : null}
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Add Status Update</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <TaskUpdateForm taskId={task.id} currentStatus={task.status} />
-          </CardContent>
+          <CardHeader><CardTitle>Add Status Update</CardTitle></CardHeader>
+          <CardContent><TaskUpdateForm taskId={task.id} currentStatus={task.status} /></CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle>Details</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Details</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <Detail label="Owner role" value={task.ownerRole?.name || "—"} />
+            <Detail label="Teams" value={assignedTeamNames.length > 0 ? assignedTeamNames.join(", ") : "—"} />
             <Detail
-              label="Owner"
-              value={task.ownerUser ? `${task.ownerUser.name} (${task.ownerUser.email})` : "—"}
-            />
-            <Detail
-              label="Sub-owner"
-              value={task.subOwner ? `${task.subOwner.name} (${task.subOwner.email})` : "—"}
+              label="Assigned members"
+              value={
+                assignedMembers.length > 0
+                  ? assignedMembers.map((m) => `${m.name} (${m.email})${m.designation ? ` · ${m.designation}` : ""} [${m.teamName}]`).join(", ")
+                  : "—"
+              }
             />
             <Detail label="Deadline" value={task.deadline ? formatDate(task.deadline) : "—"} />
             <Detail label="Frequency" value={task.frequency || "—"} />
@@ -90,11 +79,6 @@ export default async function TaskDetail({ params }: { params: { id: string } })
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader><CardTitle>Escalate to Dr. BN</CardTitle></CardHeader>
-        <CardContent><EscalateForm taskId={task.id} /></CardContent>
-      </Card>
 
       <Card>
         <CardHeader><CardTitle>Update History</CardTitle></CardHeader>
@@ -109,9 +93,7 @@ export default async function TaskDetail({ params }: { params: { id: string } })
                   <div className="text-xs text-muted-foreground">{formatRelative(u.createdAt)}</div>
                 </div>
                 <div className="mt-1.5 whitespace-pre-line text-sm">{u.note}</div>
-                {u.newStatus ? (
-                  <div className="mt-2"><Badge variant="info">Status → {u.newStatus.replace(/_/g, " ")}</Badge></div>
-                ) : null}
+                {u.newStatus ? <div className="mt-2"><Badge variant="info">Status → {u.newStatus.replace(/_/g, " ")}</Badge></div> : null}
               </div>
             ))
           )}
@@ -122,10 +104,5 @@ export default async function TaskDetail({ params }: { params: { id: string } })
 }
 
 function Detail({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="mt-0.5">{value}</div>
-    </div>
-  );
+  return <div><div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{label}</div><div className="mt-0.5">{value}</div></div>;
 }

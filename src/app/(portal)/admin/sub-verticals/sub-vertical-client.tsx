@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { DeleteConfirmDialog } from "@/components/ui/delete-dialog";
 import { Trash2, Edit2, X } from "lucide-react";
 import { upsertSubVerticalAction, deleteSubVerticalAction } from "./actions";
 
@@ -67,6 +68,7 @@ export function SubVerticalRow({
   verticals: Vertical[];
 }) {
   const [editing, setEditing] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -93,18 +95,30 @@ export function SubVerticalRow({
         <Button
           variant="ghost"
           size="sm"
-          disabled={pending || s.taskCount > 0}
-          onClick={() => {
-            if (!confirm(`Delete sub-vertical "${s.name}"?`)) return;
+          disabled={pending}
+          onClick={() => setDeleteOpen(true)}
+        >
+          <Trash2 className="h-4 w-4 text-destructive" />
+        </Button>
+        <DeleteConfirmDialog
+          open={deleteOpen}
+          itemName={s.name}
+          itemType="sub-vertical"
+          itemDesc={
+            s.taskCount > 0
+              ? `This sub-vertical has ${s.taskCount} task(s). The tasks will be kept but their sub-vertical association will be cleared.`
+              : undefined
+          }
+          onCancel={() => setDeleteOpen(false)}
+          onConfirm={() => {
+            setDeleteOpen(false);
             startTransition(async () => {
               const result = await deleteSubVerticalAction(s.id);
               if (!result.success) { alert(result.error); return; }
               router.refresh();
             });
           }}
-        >
-          <Trash2 className="h-4 w-4 text-destructive" />
-        </Button>
+        />
       </div>
     </div>
   );

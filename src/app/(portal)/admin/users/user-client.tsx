@@ -13,9 +13,7 @@ import { ROLE_LABELS } from "@/lib/rbac";
 import { upsertUserAction, deleteUserAction, toggleUserActiveAction } from "./actions";
 import { generateTempPasswordAction } from "../actions";
 
-type OwnerRole = { id: string; name: string };
-
-export function UserForm({ ownerRoles, initial }: { ownerRoles: OwnerRole[]; initial?: { id?: string; name?: string; email?: string; systemRole?: SystemRole; ownerRoleId?: string | null } }) {
+export function UserForm({ initial }: { initial?: { id?: string; name?: string; email?: string; systemRole?: SystemRole } }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -36,52 +34,17 @@ export function UserForm({ ownerRoles, initial }: { ownerRoles: OwnerRole[]; ini
   return (
     <form onSubmit={onSubmit} className="grid grid-cols-1 gap-3 sm:grid-cols-6">
       {initial?.id ? <input type="hidden" name="id" value={initial.id} /> : null}
-      <div className="space-y-1.5 sm:col-span-2">
-        <Label htmlFor="name">Full name</Label>
-        <Input id="name" name="name" required defaultValue={initial?.name} />
-      </div>
-      <div className="space-y-1.5 sm:col-span-2">
-        <Label htmlFor="email">Email</Label>
-        <Input id="email" name="email" type="email" required defaultValue={initial?.email} />
-      </div>
-      <div className="space-y-1.5 sm:col-span-2">
-        <Label htmlFor="password">{initial?.id ? "New password (optional)" : "Password"}</Label>
-        <Input id="password" name="password" type="password" minLength={6} required={!initial?.id} placeholder={initial?.id ? "Leave blank to keep" : "Min 6 characters"} />
-      </div>
-      <div className="space-y-1.5 sm:col-span-3">
-        <Label htmlFor="systemRole">System role</Label>
-        <Select id="systemRole" name="systemRole" required defaultValue={initial?.systemRole || "SM"}>
-          <option value="SUPER_ADMIN">{ROLE_LABELS.SUPER_ADMIN}</option>
-          <option value="CBO">{ROLE_LABELS.CBO}</option>
-          <option value="SM">{ROLE_LABELS.SM}</option>
-        </Select>
-      </div>
-      <div className="space-y-1.5 sm:col-span-3">
-        <Label htmlFor="ownerRoleId">Owner role (optional)</Label>
-        <Select id="ownerRoleId" name="ownerRoleId" defaultValue={initial?.ownerRoleId || ""}>
-          <option value="">— None —</option>
-          {ownerRoles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-        </Select>
-      </div>
-      {error && (
-        <div className="sm:col-span-6 rounded-md border border-destructive/40 bg-destructive/5 p-2.5 text-xs text-destructive">
-          {error}
-        </div>
-      )}
-      <div className="sm:col-span-6 flex justify-end">
-        <Button type="submit" disabled={pending}>{pending ? "Saving…" : initial?.id ? "Update user" : "Add user"}</Button>
-      </div>
+      <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="name">Full name</Label><Input id="name" name="name" required defaultValue={initial?.name} /></div>
+      <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="email">Email</Label><Input id="email" name="email" type="email" required defaultValue={initial?.email} /></div>
+      <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="password">{initial?.id ? "New password (optional)" : "Password"}</Label><Input id="password" name="password" type="password" minLength={6} required={!initial?.id} placeholder={initial?.id ? "Leave blank to keep" : "Min 6 characters"} /></div>
+      <div className="space-y-1.5 sm:col-span-6"><Label htmlFor="systemRole">System role</Label><Select id="systemRole" name="systemRole" required defaultValue={initial?.systemRole || "SM"}><option value="SUPER_ADMIN">{ROLE_LABELS.SUPER_ADMIN}</option><option value="CBO">{ROLE_LABELS.CBO}</option><option value="SM">{ROLE_LABELS.SM}</option></Select></div>
+      {error && <div className="sm:col-span-6 rounded-md border border-destructive/40 bg-destructive/5 p-2.5 text-xs text-destructive">{error}</div>}
+      <div className="sm:col-span-6 flex justify-end"><Button type="submit" disabled={pending}>{pending ? "Saving…" : initial?.id ? "Update user" : "Add user"}</Button></div>
     </form>
   );
 }
 
-export function UserRow({
-  u,
-  ownerRoles,
-}: {
-  u: { id: string; name: string; email: string; systemRole: SystemRole; ownerRole: string | null; active: boolean };
-  ownerRoles: OwnerRole[];
-}) {
+export function UserRow({ u }: { u: { id: string; name: string; email: string; systemRole: SystemRole; active: boolean } }) {
   const [editing, setEditing] = useState(false);
   const [tempShown, setTempShown] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -91,20 +54,8 @@ export function UserRow({
   if (editing) {
     return (
       <div className="rounded-lg border border-primary/40 bg-accent/40 p-3">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="text-xs font-semibold uppercase text-muted-foreground">Edit user</div>
-          <button onClick={() => setEditing(false)} className="rounded-md p-1 hover:bg-card"><X className="h-4 w-4" /></button>
-        </div>
-        <UserForm
-          ownerRoles={ownerRoles}
-          initial={{
-            id: u.id,
-            name: u.name,
-            email: u.email,
-            systemRole: u.systemRole,
-            ownerRoleId: ownerRoles.find((r) => r.name === u.ownerRole)?.id || null,
-          }}
-        />
+        <div className="mb-3 flex items-center justify-between"><div className="text-xs font-semibold uppercase text-muted-foreground">Edit user</div><button onClick={() => setEditing(false)} className="rounded-md p-1 hover:bg-card"><X className="h-4 w-4" /></button></div>
+        <UserForm initial={{ id: u.id, name: u.name, email: u.email, systemRole: u.systemRole }} />
       </div>
     );
   }
@@ -112,71 +63,20 @@ export function UserRow({
   return (
     <div className="rounded-lg border border-border p-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <div className="text-sm font-semibold">{u.name}</div>
-          <div className="text-xs text-muted-foreground truncate">
-            {u.email} · {ROLE_LABELS[u.systemRole]}{u.ownerRole ? ` · ${u.ownerRole}` : ""}
-          </div>
-        </div>
+        <div className="min-w-0"><div className="text-sm font-semibold">{u.name}</div><div className="text-xs text-muted-foreground truncate">{u.email} · {ROLE_LABELS[u.systemRole]}</div></div>
         <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
           <Badge variant={u.active ? "success" : "muted"}>{u.active ? "Active" : "Disabled"}</Badge>
           <Button variant="ghost" size="sm" onClick={() => setEditing(true)} title="Edit"><Edit2 className="h-4 w-4" /></Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={pending}
-            title="Generate temp password"
-            onClick={() => {
-              if (!confirm(`Generate a temporary password for ${u.email}? Their old password will be replaced.`)) return;
-              startTransition(async () => {
-                const result = await generateTempPasswordAction(u.id);
-                if (!result.success) { alert(result.error); return; }
-                setTempShown(result.temp);
-              });
-            }}
-          >
-            <Key className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="sm" disabled={pending} title="Toggle active"
-            onClick={() => startTransition(async () => {
-              const r = await toggleUserActiveAction(u.id);
-              if (!r.success) { alert(r.error); return; }
-              router.refresh();
-            })}
-          >
-            <Power className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="sm" disabled={pending} title="Delete"
-            onClick={() => {
-              if (!confirm(`Delete user "${u.name}"?`)) return;
-              startTransition(async () => {
-                const r = await deleteUserAction(u.id);
-                if (!r.success) { alert(r.error); return; }
-                router.refresh();
-              });
-            }}
-          >
-            <Trash2 className="h-4 w-4 text-destructive" />
-          </Button>
+          <Button variant="ghost" size="sm" disabled={pending} title="Generate temp password" onClick={() => { if (!confirm(`Generate a temporary password for ${u.email}?`)) return; startTransition(async () => { const result = await generateTempPasswordAction(u.id); if (!result.success) { alert(result.error); return; } setTempShown(result.temp); }); }}><Key className="h-4 w-4" /></Button>
+          <Button variant="ghost" size="sm" disabled={pending} title="Toggle active" onClick={() => startTransition(async () => { const r = await toggleUserActiveAction(u.id); if (!r.success) { alert(r.error); return; } router.refresh(); })}><Power className="h-4 w-4" /></Button>
+          <Button variant="ghost" size="sm" disabled={pending} title="Delete" onClick={() => { if (!confirm(`Delete user "${u.name}"?`)) return; startTransition(async () => { const r = await deleteUserAction(u.id); if (!r.success) { alert(r.error); return; } router.refresh(); }); }}><Trash2 className="h-4 w-4 text-destructive" /></Button>
         </div>
       </div>
       {tempShown && (
         <div className="mt-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs">
           <div className="flex items-center justify-between gap-2">
-            <div>
-              <span className="font-bold text-warning">⚠️ Temp password (one-time view):</span>{" "}
-              <code className="rounded bg-background px-2 py-1 font-mono text-foreground">{tempShown}</code>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Button size="sm" variant="outline"
-                onClick={async () => {
-                  try { await navigator.clipboard.writeText(tempShown); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch {}
-                }}
-              >
-                {copied ? <><Check className="h-3 w-3" /> Copied</> : <><Copy className="h-3 w-3" /> Copy</>}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setTempShown(null)}><X className="h-3 w-3" /></Button>
-            </div>
+            <div><span className="font-bold text-warning">⚠️ Temp password (one-time view):</span> <code className="rounded bg-background px-2 py-1 font-mono text-foreground">{tempShown}</code></div>
+            <div className="flex items-center gap-1.5"><Button size="sm" variant="outline" onClick={async () => { try { await navigator.clipboard.writeText(tempShown); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch {} }}>{copied ? <><Check className="h-3 w-3" /> Copied</> : <><Copy className="h-3 w-3" /> Copy</>}</Button><Button size="sm" variant="ghost" onClick={() => setTempShown(null)}><X className="h-3 w-3" /></Button></div>
           </div>
           <p className="mt-2 text-muted-foreground">Share with the user securely. They should change it immediately after first login.</p>
         </div>

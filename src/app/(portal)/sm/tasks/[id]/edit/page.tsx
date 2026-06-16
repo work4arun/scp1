@@ -5,64 +5,31 @@ import { canManageTasks } from "@/lib/rbac";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { EditTaskForm } from "./edit-form";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
 
 export default async function EditTaskPage({ params }: { params: { id: string } }) {
   const session = await auth();
   if (!canManageTasks(session?.user.systemRole)) redirect("/");
 
-  const [task, verticals, subVerticals, priorities, ownerRoles] = await Promise.all([
-    prisma.task.findUnique({ where: { id: params.id }, include: { ownerUser: true, subOwner: true, priority: true } }),
+  const [task, verticals, subVerticals, priorities, teams] = await Promise.all([
+    prisma.task.findUnique({ where: { id: params.id }, include: { teamAssignments: { include: { team: true } }, assignees: { include: { member: true } }, priority: true } }),
     prisma.vertical.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
     prisma.subVertical.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
     prisma.priority.findMany({ where: { active: true }, orderBy: { rank: "asc" } }),
-    prisma.ownerRole.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
+    prisma.team.findMany({ where: { active: true }, orderBy: { name: "asc" }, include: { members: { where: { active: true }, orderBy: { sortOrder: "asc" } } } }),
   ]);
-
   if (!task) notFound();
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <PageHeader
-        title={`Edit · ${task.code}`}
-        description="Every change is logged in the task timeline as a field-level diff."
-        action={
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/sm/tasks/${task.id}`}><ArrowLeft className="h-4 w-4" /> Back</Link>
-          </Button>
-        }
-      />
-      <Card>
-        <CardContent className="p-5">
-          <EditTaskForm
-            taskId={task.id}
-            verticals={verticals.map((v) => ({ id: v.id, code: v.code, name: v.name }))}
-            subVerticals={subVerticals.map((s) => ({ id: s.id, name: s.name, verticalId: s.verticalId }))}
-            priorities={priorities.map((p) => ({ id: p.id, code: p.code, label: p.label }))}
-            ownerRoles={ownerRoles.map((r) => ({ id: r.id, name: r.name, email: r.ownerEmail ?? null }))}
-            initial={{
-              title: task.title,
-              verticalId: task.verticalId,
-              subVerticalId: task.subVerticalId,
-              priorityId: task.priorityId,
-              ownerRoleId: task.ownerRoleId,
-              ownerUserEmail: task.ownerUser?.email ?? null,
-              subOwnerEmail: task.subOwner?.email ?? null,
-              deadline: task.deadline ? task.deadline.toISOString().slice(0, 10) : "",
-              delayReason: task.delayReason,
-              frequency: task.frequency,
-              source: task.source,
-              expectedOutput: task.expectedOutput,
-              supportNeeded: task.supportNeeded,
-              nextAction: task.nextAction,
-              intervention: task.intervention,
-              status: task.status,
-            }}
-          />
-        </CardContent>
-      </Card>
+    <div className="space-y-6 animate-fade-in"><PageHeader title="Edit Task" description={task.code} />
+      <Card><CardContent className="p-5">
+        <EditTaskForm
+          task={{ id: task.id, code: task.code, title: task.title, verticalId: task.verticalId, subVerticalId: task.subVerticalId, priorityId: task.priorityId, deadline: task.deadline ? task.deadline.toISOString().slice(0, 10) : "", frequency: task.frequency || "", source: task.source, expectedOutput: task.expectedOutput || "", supportNeeded: task.supportNeeded || "", delayReason: task.delayReason || "", nextAction: task.nextAction || "", intervention: task.intervention, status: task.status, teamIds: task.teamAssignments.map((ta) => ta.teamId), memberIds: task.assignees.map((a) => a.memberId) }}
+          verticals={verticals.map((v) => ({ id: v.id, code: v.code, name: v.name }))}
+          subVerticals={subVerticals.map((s) => ({ id: s.id, name: s.name, verticalId: s.verticalId }))}
+          priorities={priorities.map((p) => ({ id: p.id, code: p.code, label: p.label }))}
+          teams={teams.map((t) => ({ id: t.id, name: t.name, members: t.members.map((m) => ({ id: m.id, name: m.name, email: m.email, designation: m.designation })) }))}
+        />
+      </CardContent></Card>
     </div>
   );
 }

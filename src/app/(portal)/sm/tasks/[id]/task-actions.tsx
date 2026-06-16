@@ -13,17 +13,14 @@ import { softDeleteTaskAction, duplicateTaskAction } from "./edit/actions";
 export function TaskActions({
   taskId,
   code,
-  hasOpenEscalation,
+  hasOpenEscalation = false,
   isSuperAdmin = false,
 }: {
   taskId: string;
   code: string;
-  hasOpenEscalation: boolean;
+  hasOpenEscalation?: boolean;
   isSuperAdmin?: boolean;
 }) {
-  // Super Admin can override the open-escalation lock on delete — the server
-  // action already allows it (canConfigureSystem) but the UI used to block it.
-  const blockDelete = hasOpenEscalation && !isSuperAdmin;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -113,7 +110,7 @@ export function TaskActions({
               <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={pending}>Cancel</Button>
               <Button
                 variant="destructive"
-                disabled={pending || blockDelete || !confirmMatches}
+                disabled={pending || !confirmMatches}
                 onClick={() => startTransition(async () => {
                   setDeleteError(null);
                   try {

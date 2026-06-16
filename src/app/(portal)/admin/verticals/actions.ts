@@ -63,13 +63,11 @@ export async function deleteVerticalAction(id: string): Promise<VerticalResult> 
   const authed = await ensureAdmin();
   if (!authed.ok) return { success: false, error: authed.error };
 
-  const count = await prisma.task.count({ where: { verticalId: id } });
-  if (count > 0) {
-    return { success: false, error: `This vertical has ${count} task(s). Reassign or delete them before removing the vertical.` };
-  }
-
   try {
     const v = await prisma.vertical.findUnique({ where: { id }, select: { name: true, code: true } });
+    // Delete all tasks belonging to this vertical first (to satisfy FK constraints),
+    // then delete the vertical itself (sub-verticals cascade).
+    await prisma.task.deleteMany({ where: { verticalId: id } });
     await prisma.vertical.delete({ where: { id } });
     await prisma.auditLog.create({ data: { userId: authed.userId, action: "vertical.delete", entity: "Vertical", entityId: id, note: v ? `${v.code} — ${v.name}` : null } });
   } catch (err) {

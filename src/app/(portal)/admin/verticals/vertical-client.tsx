@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { DeleteConfirmDialog } from "@/components/ui/delete-dialog";
 import { Trash2, Edit2, Save, X, ArrowUp, ArrowDown } from "lucide-react";
 import { upsertVerticalAction, deleteVerticalAction, toggleVerticalActiveAction } from "./actions";
 import { moveVerticalAction } from "../actions";
@@ -69,6 +70,7 @@ export function VerticalRow({
   v: { id: string; code: string; name: string; description: string | null; colorHex: string; sortOrder: number; active: boolean; taskCount: number; subCount: number };
 }) {
   const [editing, setEditing] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -122,18 +124,30 @@ export function VerticalRow({
         >
           <Save className="h-4 w-4" />
         </Button>
-        <Button variant="ghost" size="sm" disabled={pending || v.taskCount > 0} title="Delete"
-          onClick={() => {
-            if (!confirm(`Delete vertical "${v.name}"? This cannot be undone.`)) return;
+        <Button variant="ghost" size="sm" disabled={pending} title="Delete"
+          onClick={() => setDeleteOpen(true)}
+        >
+          <Trash2 className="h-4 w-4 text-destructive" />
+        </Button>
+        <DeleteConfirmDialog
+          open={deleteOpen}
+          itemName={v.name}
+          itemType="vertical"
+          itemDesc={
+            v.taskCount > 0 || v.subCount > 0
+              ? `This vertical has ${v.taskCount} task(s) and ${v.subCount} sub-vertical(s). Deleting it will permanently remove all associated tasks and sub-verticals.`
+              : undefined
+          }
+          onCancel={() => setDeleteOpen(false)}
+          onConfirm={() => {
+            setDeleteOpen(false);
             startTransition(async () => {
               const r = await deleteVerticalAction(v.id);
               if (!r.success) { alert(r.error); return; }
               router.refresh();
             });
           }}
-        >
-          <Trash2 className="h-4 w-4 text-destructive" />
-        </Button>
+        />
       </div>
     </div>
   );

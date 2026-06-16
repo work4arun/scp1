@@ -1,0 +1,48 @@
+# ── Listmonk (email sending) — uses the existing local Postgres server ──
+# Run: docker compose up -d
+# Admin UI: http://localhost:9000
+# Default login: admin / listmonk (change after first login)
+
+services:
+  listmonk:
+    image: listmonk/listmonk:latest
+    container_name: listmonk_app
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: [sh, -c, "./listmonk --install --idempotent --yes --config '' && ./listmonk --upgrade --yes --config '' && ./listmonk --config ''"]
+    environment:
+      LISTMONK_app__address: 0.0.0.0:9000
+      LISTMONK_db__user: postgres
+      LISTMONK_db__password: postgres
+      LISTMONK_db__database: listmonk
+      LISTMONK_db__host: host.docker.internal     # reach the host's Postgres from inside the container
+      LISTMONK_db__port: 5432
+      LISTMONK_db__ssl_mode: disable
+      LISTMONK_db__max_open: 25
+      LISTMONK_db__max_idle: 25
+      LISTMONK_db__max_lifetime: 300s
+      TZ: Etc/UTC
+      LISTMONK_ADMIN_USER: admin
+      LISTMONK_ADMIN_PASSWORD: listmonk
+    volumes:
+      - ./listmonk-uploads:/listmonk/uploads:rw
+    extra_hosts:
+      - "host.docker.internal:host-gateway"       # allows reaching localhost:5432 from the container
+
+  # Health-check helper — pings the host Postgres to gate listmonk startup
+  db:
+    image: postgres:17-alpine
+    container_name: listmonk_db_check
+    restart: "no"
+    command: >
+      sh -c "
+      echo 'Waiting for Postgres on host.docker.internal:5432...';
+      until pg_isready -h host.docker.internal -p 5432 -U postgres; do sleep 2; done;
+      echo 'Postgres is ready.';
+      "
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

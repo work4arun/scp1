@@ -73,7 +73,7 @@ export function BulkTaskList({
     const ownerRoleId = bulkOwner === "__unassign__" ? null : bulkOwner;
     startTransition(async () => {
       try {
-        const result = await bulkUpdateAction(Array.from(selected), { ownerRoleId });
+        const result = await bulkUpdateAction(Array.from(selected), {});
         if (!result.success) { alert(result.error); return; }
         setSelected(new Set()); setBulkOwner("");
         router.refresh();

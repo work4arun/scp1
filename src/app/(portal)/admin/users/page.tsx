@@ -10,22 +10,16 @@ export default async function UsersAdmin() {
   const session = await auth();
   if (!canConfigureSystem(session?.user.systemRole)) redirect("/");
 
-  const [users, ownerRoles] = await Promise.all([
-    prisma.user.findMany({
-      orderBy: { createdAt: "desc" },
-      include: { ownerRole: true },
-    }),
-    prisma.ownerRole.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
-  ]);
+  const users = await prisma.user.findMany({ orderBy: { createdAt: "desc" } });
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <PageHeader title="Users" description="Manage Super Admin / CBO / SM accounts and link them to operational roles." />
+      <PageHeader title="Users" description="Manage Super Admin / CBO / SM accounts." />
 
       <Card>
         <CardHeader><CardTitle>Add new user</CardTitle></CardHeader>
         <CardContent>
-          <UserForm ownerRoles={ownerRoles.map((r) => ({ id: r.id, name: r.name }))} />
+          <UserForm />
         </CardContent>
       </Card>
 
@@ -35,11 +29,7 @@ export default async function UsersAdmin() {
           {users.map((u) => (
             <UserRow
               key={u.id}
-              u={{
-                id: u.id, name: u.name, email: u.email, systemRole: u.systemRole,
-                ownerRole: u.ownerRole?.name || null, active: u.active,
-              }}
-              ownerRoles={ownerRoles.map((r) => ({ id: r.id, name: r.name }))}
+              u={{ id: u.id, name: u.name, email: u.email, systemRole: u.systemRole, active: u.active }}
             />
           ))}
         </CardContent>

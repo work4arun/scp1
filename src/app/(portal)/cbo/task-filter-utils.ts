@@ -1,119 +1,50 @@
-// Helpers shared by the filter bar UI and the page query builder.
-
-import type { Prisma, TaskStatus, TaskSource, InterventionFlag } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 
 export type TaskFilterParams = {
+  vertical?: string;
+  subVertical?: string;
+  priority?: string;
+  team?: string;
+  status?: string;
+  intervention?: string;
   q?: string;
-  vertical?: string;     // vertical CODE
-  subVertical?: string;  // sub-vertical id
-  priority?: string;     // priority CODE
-  status?: string;       // TaskStatus
-  ownerRole?: string;    // OwnerRole id
-  ownerUser?: string;    // User id, or "__unassigned__"
-  source?: string;       // TaskSource
-  intervention?: string; // InterventionFlag
-  deadline?: string;     // "overdue" | "today" | "this_week" | "no_deadline"
-  // ── Date filter ─────────────────────────────────────────────────────────
-  dateType?: string;     // "assigned" | "deadline_exact"
-  dateFrom?: string;     // range start "YYYY-MM-DD"
-  dateTo?: string;       // range end   "YYYY-MM-DD"
+  deadlineFrom?: string;
+  deadlineTo?: string;
+  createdFrom?: string;
+  createdTo?: string;
 };
 
-const VALID_STATUSES = new Set<TaskStatus>([
-  "NOT_STARTED", "IN_PROGRESS", "WAITING_FOR_INPUT", "WAITING_FOR_APPROVAL",
-  "DELAYED", "COMPLETED", "PARKED", "DROPPED",
-]);
-const VALID_SOURCES = new Set<TaskSource>([
-  "BOSS_INSTRUCTION", "WHATSAPP_GROUP", "MANAGEMENT_MEETING", "DEPARTMENT_MEETING",
-  "MARKETING_REVIEW", "MRM", "PLACEMENT_REVIEW", "RTC_REVIEW", "DIGITAL_REVIEW",
-  "SELF_STRATEGY", "NEW_IDEA",
-]);
-const VALID_INTERVENTIONS = new Set<InterventionFlag>(["NO", "YES", "ONLY_IF_DELAYED"]);
-
-/**
- * Build a Prisma `where` clause for the active task list given the URL params.
- * Caller is responsible for ANDing additional constraints (e.g. excluding
- * DROPPED tasks) on top.
- */
 export function buildTaskWhere(params: TaskFilterParams): Prisma.TaskWhereInput {
   const where: Prisma.TaskWhereInput = {};
-
-  // Free-text search across title, description, code.
-  const q = params.q?.trim();
-  if (q) {
-    where.OR = [
-      { title:       { contains: q, mode: "insensitive" } },
-      { description: { contains: q, mode: "insensitive" } },
-      { code:        { contains: q, mode: "insensitive" } },
-    ];
-  }
-
-  if (params.vertical)    where.vertical = { code: params.vertical };
+  if (params.vertical) where.verticalId = params.vertical;
   if (params.subVertical) where.subVerticalId = params.subVertical;
-  if (params.priority)    where.priority = { code: params.priority };
+  if (params.priority) where.priorityId = params.priority;
+  if (params.team) where.teamAssignments = { some: { teamId: params.team } };
+  if (params.status) where.status = params.status as Prisma.EnumTaskStatusFilter["equals"];
+  if (params.q) where.title = { contains: params.q, mode: "insensitive" };
 
-  if (params.status && VALID_STATUSES.has(params.status as TaskStatus)) {
-    where.status = params.status as TaskStatus;
-  }
-  if (params.source && VALID_SOURCES.has(params.source as TaskSource)) {
-    where.source = params.source as TaskSource;
-  }
-  if (params.intervention && VALID_INTERVENTIONS.has(params.intervention as InterventionFlag)) {
-    where.intervention = params.intervention as InterventionFlag;
-  }
-  if (params.ownerRole) {
-    where.ownerRoleId = params.ownerRole;
-  }
-  if (params.ownerUser) {
-    if (params.ownerUser === "__unassigned__") where.ownerUserId = null;
-    else where.ownerUserId = params.ownerUser;
-  }
-
-  // Deadline state filter. We reset to start-of-day to keep the boundaries
-  // predictable across renders.
-  if (params.deadline) {
-    const now = new Date();
-    const startToday = new Date(now); startToday.setHours(0, 0, 0, 0);
-    const endToday = new Date(startToday); endToday.setDate(endToday.getDate() + 1);
-    const endWeek = new Date(startToday); endWeek.setDate(endWeek.getDate() + 7);
-
-    switch (params.deadline) {
-      case "overdue":
-        where.deadline = { lt: startToday };
-        break;
-      case "today":
-        where.deadline = { gte: startToday, lt: endToday };
-        break;
-      case "this_week":
-        where.deadline = { gte: startToday, lt: endWeek };
-        break;
-      case "no_deadline":
-        where.deadline = null;
-        break;
+  if (params.deadlineFrom || params.deadlineTo) {
+    const deadline: Prisma.DateTimeNullableFilter = {};
+    if (params.deadlineFrom) deadline.gte = new Date(params.deadlineFrom);
+    if (params.deadlineTo) {
+      const to = new Date(params.deadlineTo);
+      to.setDate(to.getDate() + 1);
+      deadline.lt = to;
+    } else {
+      deadline.not = null;
     }
+    where.deadline = deadline;
   }
 
-  // ── Date range filter (From → To) ──────────────────────────────────────
-  const ISO = /^\d{4}-\d{2}-\d{2}$/;
-  const hasFrom = params.dateFrom && ISO.test(params.dateFrom);
-  const hasTo   = params.dateTo   && ISO.test(params.dateTo);
-
-  if (params.dateType && (hasFrom || hasTo)) {
-    const rangeFilter: { gte?: Date; lt?: Date } = {};
-    if (hasFrom) {
-      rangeFilter.gte = new Date(`${params.dateFrom}T00:00:00.000Z`);
+  if (params.createdFrom || params.createdTo) {
+    const createdAt: Prisma.DateTimeFilter = {};
+    if (params.createdFrom) createdAt.gte = new Date(params.createdFrom);
+    if (params.createdTo) {
+      const to = new Date(params.createdTo);
+      to.setDate(to.getDate() + 1);
+      createdAt.lt = to;
     }
-    if (hasTo) {
-      // Shift dateTo forward by one UTC day so the To date is inclusive.
-      const toEnd = new Date(`${params.dateTo}T00:00:00.000Z`);
-      toEnd.setUTCDate(toEnd.getUTCDate() + 1);
-      rangeFilter.lt = toEnd;
-    }
-    if (params.dateType === "assigned") {
-      where.createdAt = rangeFilter;
-    } else if (params.dateType === "deadline_exact") {
-      where.deadline = rangeFilter;
-    }
+    where.createdAt = createdAt;
   }
 
   return where;

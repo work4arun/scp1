@@ -10,13 +10,19 @@ export default async function NewTaskPage() {
   const session = await auth();
   if (!canManageTasks(session?.user.systemRole)) redirect("/");
 
-  const [verticals, subVerticals, priorities, ownerRoles] = await Promise.all([
+  const [verticals, subVerticals, priorities, teams] = await Promise.all([
     prisma.vertical.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
     prisma.subVertical.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
     prisma.priority.findMany({ where: { active: true }, orderBy: { rank: "asc" } }),
-    prisma.ownerRole.findMany({
+    prisma.team.findMany({
       where: { active: true },
       orderBy: { name: "asc" },
+      include: {
+        members: {
+          where: { active: true },
+          orderBy: { sortOrder: "asc" },
+        },
+      },
     }),
   ]);
 
@@ -29,12 +35,15 @@ export default async function NewTaskPage() {
             verticals={verticals.map((v) => ({ id: v.id, code: v.code, name: v.name }))}
             subVerticals={subVerticals.map((s) => ({ id: s.id, name: s.name, verticalId: s.verticalId }))}
             priorities={priorities.map((p) => ({ id: p.id, code: p.code, label: p.label }))}
-            ownerRoles={ownerRoles.map((r) => ({
-              id: r.id,
-              name: r.name,
-              // Contact email set by admin in the Roles page (ownerRole.ownerEmail).
-              // This is a notification address — it does NOT need to be a system login.
-              email: r.ownerEmail ?? null,
+            teams={teams.map((t) => ({
+              id: t.id,
+              name: t.name,
+              members: t.members.map((m) => ({
+                id: m.id,
+                name: m.name,
+                email: m.email,
+                designation: m.designation,
+              })),
             }))}
           />
         </CardContent>

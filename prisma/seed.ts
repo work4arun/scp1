@@ -1,418 +1,135 @@
-/**
- * Seeds the Strategic Control Portal database with the full framework:
- *  - 6 Verticals (Marketing, RTC, Placements, AIC RAISE, RGU, Special Strategic Projects)
- *  - All sub-verticals
- *  - P1–P4 priorities with review cadence
- *  - Owner roles (Marketing Head, Digital Lead, RTC Head, etc.)
- *  - Default Super Admin / CBO / SM users
- *  - ~80 tasks pulled directly from the framework registers
- */
-import { PrismaClient, SystemRole, TaskStatus, TaskSource, InterventionFlag } from "@prisma/client";
+import { PrismaClient, SystemRole, TaskSource, TaskStatus } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
-// ──────────────────────────────────────────────────────────────
-// Reference data
-// ──────────────────────────────────────────────────────────────
-
-const VERTICALS = [
-  { code: "MKT", name: "Marketing", colorHex: "#4f46e5", description: "Admissions, branding, lead generation, lead nurturing, walk-in conversion" },
-  { code: "RTC", name: "RTC", colorHex: "#0ea5e9", description: "Student learning ecosystem, RAALE, growth card, CoE, campus life, research, ranking" },
-  { code: "PLC", name: "Placements", colorHex: "#10b981", description: "Company connect, training effectiveness, KPI, quality placements" },
-  { code: "AIC", name: "AIC RAISE", colorHex: "#f59e0b", description: "Incubation, revenue model, schemes, venture studio, events" },
-  { code: "RGU", name: "RGU", colorHex: "#7c3aed", description: "Prelaunch, launch, team setup, change management, faculty handbooks" },
-  { code: "SSP", name: "Special Strategic Projects", colorHex: "#ef4444", description: "New ideas, boss instructions, management agenda, urgent special work" },
-] as const;
-
-const SUB_VERTICALS: Array<{ vertical: string; name: string }> = [
-  { vertical: "MKT", name: "Physical Marketing" },
-  { vertical: "MKT", name: "Digital Marketing" },
-  { vertical: "MKT", name: "Lead Dashboards" },
-  { vertical: "MKT", name: "Budget Review" },
-  { vertical: "MKT", name: "Course Strategy" },
-  { vertical: "RTC", name: "RAALE" },
-  { vertical: "RTC", name: "Growth Card" },
-  { vertical: "RTC", name: "Campus Life" },
-  { vertical: "RTC", name: "CoE Hub" },
-  { vertical: "RTC", name: "Research & Ranking" },
-  { vertical: "RTC", name: "RTC Operations" },
-  { vertical: "PLC", name: "KPI Monitoring" },
-  { vertical: "PLC", name: "Quality Placement" },
-  { vertical: "PLC", name: "Training Effectiveness" },
-  { vertical: "PLC", name: "Team Operations" },
-  { vertical: "AIC", name: "Revenue Model" },
-  { vertical: "AIC", name: "Incubation Events" },
-  { vertical: "AIC", name: "Investment & Schemes" },
-  { vertical: "AIC", name: "Venture Studio" },
-  { vertical: "RGU", name: "Prelaunch" },
-  { vertical: "RGU", name: "Launch" },
-  { vertical: "RGU", name: "Team Setup" },
-  { vertical: "RGU", name: "Change Management" },
-  { vertical: "RGU", name: "Academic Setup" },
-  { vertical: "SSP", name: "Boss Instructions" },
-  { vertical: "SSP", name: "Management Agenda" },
-  { vertical: "SSP", name: "New Initiatives" },
-];
-
-const PRIORITIES = [
-  { code: "P1", label: "Critical", description: "Must be reviewed by Dr. BN", reviewCadence: "Daily tracking", colorHex: "#ef4444", rank: 1 },
-  { code: "P2", label: "Important", description: "Team can execute with direction", reviewCadence: "Twice-a-week review", colorHex: "#f59e0b", rank: 2 },
-  { code: "P3", label: "Operational", description: "Senior Manager tracks", reviewCadence: "Weekly review", colorHex: "#0ea5e9", rank: 3 },
-  { code: "P4", label: "Parked", description: "Future idea, not immediate execution", reviewCadence: "Monthly review only", colorHex: "#6b7280", rank: 4 },
-];
-
-const OWNER_ROLES = [
-  "Marketing Head",
-  "Digital Marketing Lead",
-  "Telecalling Head",
-  "Admission Manager",
-  "Counselling Head",
-  "Course Coordinator",
-  "Branding Team",
-  "Content Team",
-  "CRM Team",
-  "Accounts",
-  "School Team",
-  "Consultant Coordinator",
-  "Alumni Coordinator",
-  "Influencer Coordinator",
-  "Website Team",
-  "Social Media Lead",
-  "RTC Head",
-  "RTC Coordinator",
-  "Academic Team",
-  "Student Affairs",
-  "CoE Team",
-  "Research Team",
-  "Ranking Team",
-  "RFabX Lead",
-  "Placement Head",
-  "Training Head",
-  "Placement Strategy Team",
-  "AIC Lead",
-  "AIC Team",
-  "Event Lead",
-  "RGU Core Team",
-  "RGU Lead",
-  "Academic Head",
-  "HR",
-  "Senior Manager",
-  "Dr. BN",
-];
-
-// ──────────────────────────────────────────────────────────────
-// Tasks (from your framework registers)
-// ──────────────────────────────────────────────────────────────
-
-type SeedTask = {
-  vertical: string;
-  subVertical?: string;
-  title: string;
-  priority: "P1" | "P2" | "P3" | "P4";
-  ownerRole?: string;
-  frequency?: string;
-  expectedOutput?: string;
-  status?: TaskStatus;
-  intervention?: InterventionFlag;
-  source?: TaskSource;
-};
-
-const TASKS: SeedTask[] = [
-  // ───── Marketing — Physical
-  { vertical: "MKT", subVertical: "Physical Marketing", title: "Weekly MRM and action-taken points review", priority: "P1", ownerRole: "Marketing Head", frequency: "Weekly", expectedOutput: "Action points closed weekly", status: "IN_PROGRESS" },
-  { vertical: "MKT", subVertical: "Physical Marketing", title: "Poor-performing course strategy (RTC, Viscom, Fashion, MBA, MCA, Physio, Pharmacy)", priority: "P1", ownerRole: "Marketing Head", frequency: "Weekly", intervention: "YES" },
-  { vertical: "MKT", subVertical: "Physical Marketing", title: "Lead generation tracking", priority: "P1", ownerRole: "Marketing Head", frequency: "Daily" },
-  { vertical: "MKT", subVertical: "Physical Marketing", title: "Lead nurturing for walk-ins", priority: "P1", ownerRole: "Counselling Head", frequency: "Daily" },
-  { vertical: "MKT", subVertical: "Physical Marketing", title: "Warm-to-hot conversion", priority: "P1", ownerRole: "Telecalling Head", frequency: "Daily" },
-  { vertical: "MKT", subVertical: "Physical Marketing", title: "Walk-in to admission conversion", priority: "P1", ownerRole: "Admission Manager", frequency: "Daily" },
-  { vertical: "MKT", subVertical: "Physical Marketing", title: "Telecaller monitoring", priority: "P1", ownerRole: "Telecalling Head", frequency: "Daily" },
-  { vertical: "MKT", subVertical: "Physical Marketing", title: "Flex and hoardings campaign", priority: "P3", ownerRole: "Branding Team", frequency: "Monthly" },
-  { vertical: "MKT", subVertical: "Physical Marketing", title: "Newspaper and inserts", priority: "P3", ownerRole: "Marketing Head", frequency: "Campaign-based" },
-  { vertical: "MKT", subVertical: "Physical Marketing", title: "Expos coordination", priority: "P2", ownerRole: "Marketing Head", frequency: "Event-based" },
-  { vertical: "MKT", subVertical: "Budget Review", title: "Budget spent review", priority: "P1", ownerRole: "Accounts", frequency: "Weekly" },
-  { vertical: "MKT", subVertical: "Course Strategy", title: "HE / ME / LE course classification", priority: "P1", ownerRole: "Marketing Head", frequency: "Weekly", intervention: "YES" },
-  { vertical: "MKT", subVertical: "Course Strategy", title: "New strategy formulation with Dr. BN", priority: "P1", ownerRole: "Senior Manager", frequency: "Weekly", intervention: "YES" },
-  { vertical: "MKT", subVertical: "Physical Marketing", title: "Brochures and content creation", priority: "P2", ownerRole: "Content Team", frequency: "Weekly" },
-  { vertical: "MKT", subVertical: "Physical Marketing", title: "Raw data campaigning", priority: "P2", ownerRole: "Telecalling Head", frequency: "Daily" },
-  { vertical: "MKT", subVertical: "Physical Marketing", title: "AI calls operations", priority: "P2", ownerRole: "CRM Team", frequency: "Daily" },
-  { vertical: "MKT", subVertical: "Physical Marketing", title: "AI chat operations", priority: "P2", ownerRole: "Digital Marketing Lead", frequency: "Daily" },
-  { vertical: "MKT", subVertical: "Physical Marketing", title: "Webinars by department", priority: "P2", ownerRole: "Marketing Head", frequency: "Weekly" },
-  { vertical: "MKT", subVertical: "Physical Marketing", title: "School admissions review", priority: "P1", ownerRole: "School Team", frequency: "Weekly" },
-  { vertical: "MKT", subVertical: "Lead Dashboards", title: "Walk-in dashboard", priority: "P1", ownerRole: "Admission Manager", frequency: "Daily" },
-  { vertical: "MKT", subVertical: "Lead Dashboards", title: "Consultant dashboard", priority: "P1", ownerRole: "Consultant Coordinator", frequency: "Weekly" },
-  { vertical: "MKT", subVertical: "Lead Dashboards", title: "Overall leads dashboard", priority: "P1", ownerRole: "CRM Team", frequency: "Daily" },
-  { vertical: "MKT", subVertical: "Physical Marketing", title: "Student deliverables documentation", priority: "P1", ownerRole: "Academic Team", frequency: "Weekly" },
-  { vertical: "MKT", subVertical: "Physical Marketing", title: "Student Experience Centre feedback", priority: "P1", ownerRole: "Student Affairs", frequency: "Weekly" },
-  { vertical: "MKT", subVertical: "Course Strategy", title: "USP document for each course", priority: "P1", ownerRole: "Content Team", frequency: "Weekly" },
-  { vertical: "MKT", subVertical: "Physical Marketing", title: "GIP request form processing", priority: "P2", ownerRole: "Admission Manager", frequency: "Need-based" },
-  { vertical: "MKT", subVertical: "Physical Marketing", title: "Alumni Is Our Pride distribution", priority: "P2", ownerRole: "Alumni Coordinator", frequency: "Weekly" },
-  { vertical: "MKT", subVertical: "Physical Marketing", title: "WhatsApp campaign", priority: "P1", ownerRole: "Marketing Head", frequency: "Daily" },
-
-  // ───── Marketing — Digital
-  { vertical: "MKT", subVertical: "Digital Marketing", title: "Department-wise lead nurturing plan", priority: "P1", ownerRole: "Digital Marketing Lead", frequency: "Weekly" },
-  { vertical: "MKT", subVertical: "Digital Marketing", title: "Ad spend based on HE / ME / LE classification", priority: "P1", ownerRole: "Digital Marketing Lead", frequency: "Weekly" },
-  { vertical: "MKT", subVertical: "Digital Marketing", title: "High and low performing ads review", priority: "P1", ownerRole: "Digital Marketing Lead", frequency: "Weekly" },
-  { vertical: "MKT", subVertical: "Digital Marketing", title: "Lead nurturing plan", priority: "P1", ownerRole: "CRM Team", frequency: "Weekly" },
-  { vertical: "MKT", subVertical: "Digital Marketing", title: "Social media dashboard", priority: "P2", ownerRole: "Social Media Lead", frequency: "Weekly" },
-  { vertical: "MKT", subVertical: "Digital Marketing", title: "Website traffic dashboard", priority: "P1", ownerRole: "Website Team", frequency: "Weekly", status: "WAITING_FOR_INPUT", intervention: "YES" },
-  { vertical: "MKT", subVertical: "Digital Marketing", title: "Influencer dashboard", priority: "P2", ownerRole: "Influencer Coordinator", frequency: "Campaign-based" },
-  { vertical: "MKT", subVertical: "Digital Marketing", title: "Google and Meta ad review (CPL, CTR, conversion)", priority: "P1", ownerRole: "Digital Marketing Lead", frequency: "Weekly" },
-  { vertical: "MKT", subVertical: "Digital Marketing", title: "New strategies adopted and impact report", priority: "P1", ownerRole: "Digital Marketing Lead", frequency: "Weekly" },
-  { vertical: "MKT", subVertical: "Digital Marketing", title: "RCAS Rsmart non-CS strategy impact", priority: "P1", ownerRole: "Digital Marketing Lead", frequency: "Weekly" },
-  { vertical: "MKT", subVertical: "Digital Marketing", title: "School admissions digital strategy impact", priority: "P1", ownerRole: "School Team", frequency: "Weekly" },
-  { vertical: "MKT", subVertical: "Digital Marketing", title: "RYH dashboard", priority: "P2", ownerRole: "Digital Marketing Lead", frequency: "Weekly" },
-  { vertical: "MKT", subVertical: "Digital Marketing", title: "Digital budget review", priority: "P1", ownerRole: "Accounts", frequency: "Weekly" },
-  { vertical: "MKT", subVertical: "Digital Marketing", title: "Retargeting ad dashboard", priority: "P1", ownerRole: "Digital Marketing Lead", frequency: "Weekly" },
-
-  // ───── RTC
-  { vertical: "RTC", subVertical: "RAALE", title: "Department-wise RAALE implementation review", priority: "P1", ownerRole: "RTC Head", frequency: "Weekly", intervention: "YES" },
-  { vertical: "RTC", subVertical: "Growth Card", title: "Student growth card implementation", priority: "P1", ownerRole: "Academic Team", frequency: "Weekly", intervention: "YES" },
-  { vertical: "RTC", subVertical: "RTC Operations", title: "RTC budget plan and utilization", priority: "P2", ownerRole: "Accounts", frequency: "Monthly" },
-  { vertical: "RTC", subVertical: "Campus Life", title: "Engagement activities calendar", priority: "P2", ownerRole: "Student Affairs", frequency: "Weekly" },
-  { vertical: "RTC", subVertical: "RTC Operations", title: "Wow factor — certifications and appreciation model", priority: "P1", ownerRole: "RTC Head", frequency: "Weekly", intervention: "YES" },
-  { vertical: "RTC", subVertical: "CoE Hub", title: "CoE Hub immersion and progress", priority: "P1", ownerRole: "CoE Team", frequency: "Weekly", intervention: "YES" },
-  { vertical: "RTC", subVertical: "RTC Operations", title: "AI coach learning model", priority: "P2", ownerRole: "RTC Head", frequency: "Weekly", intervention: "YES" },
-  { vertical: "RTC", subVertical: "RTC Operations", title: "Faculty / team recruitment", priority: "P1", ownerRole: "HR", frequency: "Need-based", intervention: "YES" },
-  { vertical: "RTC", subVertical: "Research & Ranking", title: "Research proposal and publication progress", priority: "P2", ownerRole: "Research Team", frequency: "Monthly", intervention: "YES" },
-  { vertical: "RTC", subVertical: "Research & Ranking", title: "Ranking submission progress", priority: "P2", ownerRole: "Ranking Team", frequency: "Monthly" },
-  { vertical: "RTC", subVertical: "CoE Hub", title: "Hackathons participation and output", priority: "P2", ownerRole: "CoE Team", frequency: "Monthly" },
-  { vertical: "RTC", subVertical: "RTC Operations", title: "RFabX revenue report", priority: "P2", ownerRole: "RFabX Lead", frequency: "Monthly", intervention: "YES" },
-  { vertical: "RTC", subVertical: "RTC Operations", title: "NASA program progress", priority: "P2", ownerRole: "RTC Coordinator", frequency: "Monthly", intervention: "YES" },
-  { vertical: "RTC", subVertical: "RTC Operations", title: "Student category list A/B/C/D segmentation", priority: "P1", ownerRole: "RTC Head", frequency: "Monthly", intervention: "YES" },
-  { vertical: "RTC", subVertical: "RTC Operations", title: "Consolidated RTC Dashboard", priority: "P1", ownerRole: "Senior Manager", frequency: "Weekly", intervention: "YES" },
-
-  // ───── Placements
-  { vertical: "PLC", subVertical: "KPI Monitoring", title: "Placement dashboard (overall status)", priority: "P1", ownerRole: "Placement Head", frequency: "Weekly", intervention: "YES" },
-  { vertical: "PLC", subVertical: "KPI Monitoring", title: "Team-wise KPI report", priority: "P1", ownerRole: "Placement Head", frequency: "Weekly", intervention: "YES" },
-  { vertical: "PLC", subVertical: "Quality Placement", title: "Monthly placement calendar (visits + training)", priority: "P1", ownerRole: "Placement Head", frequency: "Monthly" },
-  { vertical: "PLC", subVertical: "Quality Placement", title: "Two-digit target — quality company conversion", priority: "P1", ownerRole: "Placement Head", frequency: "Weekly", intervention: "YES", status: "DELAYED" },
-  { vertical: "PLC", subVertical: "Training Effectiveness", title: "Training effectiveness — student improvement report", priority: "P1", ownerRole: "Training Head", frequency: "Weekly", intervention: "YES" },
-  { vertical: "PLC", subVertical: "Quality Placement", title: "Commitment letter tracking", priority: "P2", ownerRole: "Placement Head", frequency: "Need-based" },
-  { vertical: "PLC", subVertical: "Team Operations", title: "Placement team recruitment", priority: "P1", ownerRole: "HR", frequency: "Need-based", intervention: "YES" },
-  { vertical: "PLC", subVertical: "Quality Placement", title: "Benchmarking comparison with other institutes", priority: "P2", ownerRole: "Placement Strategy Team", frequency: "Monthly", intervention: "YES" },
-
-  // ───── AIC RAISE
-  { vertical: "AIC", subVertical: "Revenue Model", title: "Revenue model and proposal", priority: "P1", ownerRole: "AIC Lead", frequency: "Monthly" },
-  { vertical: "AIC", subVertical: "Incubation Events", title: "Incubation event calendar", priority: "P2", ownerRole: "AIC Team", frequency: "Monthly" },
-  { vertical: "AIC", subVertical: "Investment & Schemes", title: "Investor connect and tracking", priority: "P1", ownerRole: "AIC Lead", frequency: "Monthly" },
-  { vertical: "AIC", subVertical: "Investment & Schemes", title: "New schemes application tracker", priority: "P2", ownerRole: "AIC Team", frequency: "Monthly" },
-  { vertical: "AIC", subVertical: "Revenue Model", title: "Concept note / proposal documents", priority: "P1", ownerRole: "AIC Lead", frequency: "Need-based" },
-  { vertical: "AIC", subVertical: "Venture Studio", title: "Venture Studio model", priority: "P1", ownerRole: "AIC Lead", frequency: "Monthly" },
-  { vertical: "AIC", subVertical: "Revenue Model", title: "Consolidated AIC RAISE dashboard", priority: "P1", ownerRole: "Senior Manager", frequency: "Weekly" },
-  { vertical: "AIC", subVertical: "Incubation Events", title: "TEDx event execution plan", priority: "P2", ownerRole: "Event Lead", frequency: "Need-based" },
-
-  // ───── RGU
-  { vertical: "RGU", subVertical: "Prelaunch", title: "RGU prelaunch roadmap", priority: "P1", ownerRole: "RGU Core Team", frequency: "Weekly", intervention: "YES" },
-  { vertical: "RGU", subVertical: "Launch", title: "RGU launch plan", priority: "P1", ownerRole: "RGU Core Team", frequency: "Weekly", intervention: "YES" },
-  { vertical: "RGU", subVertical: "Team Setup", title: "RGU team recruitment", priority: "P1", ownerRole: "HR", frequency: "Need-based", intervention: "YES" },
-  { vertical: "RGU", subVertical: "Team Setup", title: "Organisational setup planning", priority: "P1", ownerRole: "RGU Lead", frequency: "Weekly", intervention: "YES" },
-  { vertical: "RGU", subVertical: "Change Management", title: "Pride moments and change adoption strategy", priority: "P1", ownerRole: "RGU Lead", frequency: "Weekly", intervention: "YES" },
-  { vertical: "RGU", subVertical: "Academic Setup", title: "Global Skill Passport framework", priority: "P1", ownerRole: "Academic Head", frequency: "Weekly", intervention: "YES" },
-  { vertical: "RGU", subVertical: "Academic Setup", title: "Individual school training plan", priority: "P1", ownerRole: "Academic Head", frequency: "Weekly", intervention: "YES" },
-  { vertical: "RGU", subVertical: "Academic Setup", title: "Faculty handbooks (draft + final)", priority: "P1", ownerRole: "Academic Team", frequency: "Weekly", intervention: "YES" },
-];
-
-// ──────────────────────────────────────────────────────────────
-// Seed runner
-// ──────────────────────────────────────────────────────────────
-
 async function main() {
-  console.log("🌱 Seeding Strategic Control Portal…");
+  // ── Users ──
+  const passwordHash = await bcrypt.hash("admin123", 10);
+  const superAdmin = await prisma.user.upsert({
+    where: { email: "superadmin@scp.local" },
+    update: { name: "Super Admin", systemRole: "SUPER_ADMIN" },
+    create: { name: "Super Admin", email: "superadmin@scp.local", passwordHash, systemRole: "SUPER_ADMIN" },
+  });
+  const cboUser = await prisma.user.upsert({
+    where: { email: "cbo@scp.local" },
+    update: { name: "Dr. BN", systemRole: "CBO" },
+    create: { name: "Dr. BN", email: "cbo@scp.local", passwordHash, systemRole: "CBO" },
+  });
+  await prisma.user.upsert({
+    where: { email: "sm@scp.local" },
+    update: { name: "Strategic Manager", systemRole: "SM" },
+    create: { name: "Strategic Manager", email: "sm@scp.local", passwordHash, systemRole: "SM" },
+  });
 
-  // Owner roles
-  const roleMap = new Map<string, string>();
-  for (const name of OWNER_ROLES) {
-    const r = await prisma.ownerRole.upsert({
-      where: { name },
-      update: {},
-      create: { name },
+  // ── Teams ──
+  const marketingTeam = await prisma.team.upsert({
+    where: { name: "Marketing" },
+    update: {},
+    create: { name: "Marketing", description: "Marketing & Communications team" },
+  });
+  const placementTeam = await prisma.team.upsert({
+    where: { name: "Placement" },
+    update: {},
+    create: { name: "Placement", description: "Placement & Corporate Relations" },
+  });
+
+  // ── Team Members ──
+  const members = [
+    { teamId: marketingTeam.id, name: "Amit Sharma", email: "amit.sharma@example.com", designation: "Marketing Head" },
+    { teamId: marketingTeam.id, name: "Priya Patel", email: "priya.patel@example.com", designation: "Digital Marketing Lead" },
+    { teamId: marketingTeam.id, name: "Rajesh Kumar", email: "rajesh.kumar@example.com", designation: "Content Manager" },
+    { teamId: placementTeam.id, name: "Sunita Rao", email: "sunita.rao@example.com", designation: "Placement Head" },
+    { teamId: placementTeam.id, name: "Vikram Singh", email: "vikram.singh@example.com", designation: "Corporate Relations" },
+  ];
+  for (const m of members) {
+    await prisma.teamMember.upsert({
+      where: { teamId_email: { teamId: m.teamId, email: m.email } },
+      update: { name: m.name, designation: m.designation },
+      create: m,
     });
-    roleMap.set(name, r.id);
   }
-  console.log(`✓ ${OWNER_ROLES.length} owner roles`);
 
-  // Verticals
-  const verticalMap = new Map<string, string>();
-  for (const [i, v] of VERTICALS.entries()) {
-    const row = await prisma.vertical.upsert({
+  // ── Verticals ──
+  const verticals = [
+    { code: "MKT", name: "Marketing", colorHex: "#4f46e5", sortOrder: 1 },
+    { code: "RTC", name: "RTC", colorHex: "#0891b2", sortOrder: 2 },
+    { code: "PLC", name: "Placement", colorHex: "#059669", sortOrder: 3 },
+    { code: "AIC", name: "AIC", colorHex: "#d97706", sortOrder: 4 },
+    { code: "RGU", name: "RGU", colorHex: "#dc2626", sortOrder: 5 },
+    { code: "SSP", name: "Special Strategic Projects", colorHex: "#7c3aed", sortOrder: 6 },
+  ];
+  for (const v of verticals) {
+    await prisma.vertical.upsert({
       where: { code: v.code },
-      update: { name: v.name, colorHex: v.colorHex, description: v.description, sortOrder: i },
-      create: { ...v, sortOrder: i },
+      update: { name: v.name, colorHex: v.colorHex, sortOrder: v.sortOrder },
+      create: v,
     });
-    verticalMap.set(v.code, row.id);
   }
-  console.log(`✓ ${VERTICALS.length} verticals`);
 
-  // Sub-verticals
-  const subMap = new Map<string, string>(); // key: `${verticalCode}::${name}`
-  for (const [i, sv] of SUB_VERTICALS.entries()) {
-    const verticalId = verticalMap.get(sv.vertical)!;
-    const row = await prisma.subVertical.upsert({
-      where: { verticalId_name: { verticalId, name: sv.name } },
-      update: { sortOrder: i },
-      create: { name: sv.name, verticalId, sortOrder: i },
+  // ── Sub-Verticals ──
+  const mktVertical = await prisma.vertical.findUnique({ where: { code: "MKT" } });
+  const plcVertical = await prisma.vertical.findUnique({ where: { code: "PLC" } });
+  if (mktVertical) {
+    const subs = [
+      { name: "Physical Marketing", sortOrder: 1 },
+      { name: "Digital Marketing", sortOrder: 2 },
+      { name: "Growth Card", sortOrder: 3 },
+    ];
+    for (const s of subs) {
+      await prisma.subVertical.upsert({
+        where: { verticalId_name: { verticalId: mktVertical.id, name: s.name } },
+        update: { sortOrder: s.sortOrder },
+        create: { verticalId: mktVertical.id, name: s.name, sortOrder: s.sortOrder },
+      });
+    }
+  }
+  if (plcVertical) {
+    await prisma.subVertical.upsert({
+      where: { verticalId_name: { verticalId: plcVertical.id, name: "Campus Placements" } },
+      update: {},
+      create: { verticalId: plcVertical.id, name: "Campus Placements", sortOrder: 1 },
     });
-    subMap.set(`${sv.vertical}::${sv.name}`, row.id);
   }
-  console.log(`✓ ${SUB_VERTICALS.length} sub-verticals`);
 
-  // Priorities
-  const priorityMap = new Map<string, string>();
-  for (const p of PRIORITIES) {
-    const row = await prisma.priority.upsert({
+  // ── Priorities ──
+  const priorities = [
+    { code: "P1", label: "Critical", colorHex: "#dc2626", rank: 1 },
+    { code: "P2", label: "High", colorHex: "#ea580c", rank: 2 },
+    { code: "P3", label: "Medium", colorHex: "#ca8a04", rank: 3 },
+    { code: "P4", label: "Low", colorHex: "#16a34a", rank: 4 },
+  ];
+  const priorityMap: Record<string, string> = {};
+  for (const p of priorities) {
+    const created = await prisma.priority.upsert({
       where: { code: p.code },
-      update: p,
+      update: { label: p.label, colorHex: p.colorHex, rank: p.rank },
       create: p,
     });
-    priorityMap.set(p.code, row.id);
+    priorityMap[p.code] = created.id;
   }
-  console.log(`✓ ${PRIORITIES.length} priorities`);
 
-  // Default users
-  const seedUsers = [
-    {
-      email: process.env.SEED_SUPERADMIN_EMAIL || "sadmin@rathinam.in",
-      password: process.env.SEED_SUPERADMIN_PASSWORD || "SuperAdmin@123",
-      name: "Super Admin",
-      systemRole: SystemRole.SUPER_ADMIN,
-    },
-    {
-      email: process.env.SEED_CBO_EMAIL || "cbo@rathinam.in",
-      password: process.env.SEED_CBO_PASSWORD || "Cbo@123",
-      name: "Dr. BN (CBO)",
-      systemRole: SystemRole.CBO,
-    },
-    {
-      email: process.env.SEED_SM_EMAIL || "sm@rathinam.in",
-      password: process.env.SEED_SM_PASSWORD || "Sm@123",
-      name: "Senior Manager",
-      systemRole: SystemRole.SM,
-      ownerRoleName: "Senior Manager",
-    },
+  // ── Feature Flags ──
+  const flags = [
+    { key: "dark_mode_toggle", category: "ux", label: "Dark Mode Toggle", description: "Enables the dark/light mode toggle in the header" },
+    { key: "breadcrumbs", category: "ux", label: "Breadcrumbs", description: "Shows breadcrumb navigation on every page" },
+    { key: "toasts", category: "ux", label: "Toast Notifications", description: "Shows success/error toast notifications" },
+    { key: "sla_engine", category: "workflow", label: "SLA Engine", description: "Computes SLA deadlines for tasks" },
+    { key: "audit_log_v2", category: "security", label: "Audit Log v2", description: "Writes before/after snapshots on every mutation" },
+    { key: "csv_export", category: "scale", label: "CSV Export", description: "Allows exporting tasks as CSV" },
+    { key: "task_bulk_actions", category: "workflow", label: "Bulk Task Actions", description: "Enables multi-select on task lists for bulk status/delete" },
+    { key: "drop_reason", category: "workflow", label: "Drop Reason Required", description: "Requires a reason when dropping/deleting tasks" },
+    { key: "parking_auto_promote", category: "workflow", label: "Parking Auto-Promote", description: "Allows CBO to activate parking items as tasks" },
   ];
-
-  let smUserId = "";
-  for (const u of seedUsers) {
-    const ownerRoleId = (u as { ownerRoleName?: string }).ownerRoleName
-      ? roleMap.get((u as { ownerRoleName: string }).ownerRoleName)
-      : null;
-    const passwordHash = await bcrypt.hash(u.password, 10);
-    const created = await prisma.user.upsert({
-      where: { email: u.email.toLowerCase() },
-      update: { name: u.name, systemRole: u.systemRole, ownerRoleId },
-      create: {
-        email: u.email.toLowerCase(),
-        name: u.name,
-        passwordHash,
-        systemRole: u.systemRole,
-        ownerRoleId,
-      },
+  for (const f of flags) {
+    await prisma.featureFlag.upsert({
+      where: { key: f.key },
+      update: { category: f.category, label: f.label, description: f.description },
+      create: f,
     });
-    if (u.systemRole === SystemRole.SM) smUserId = created.id;
   }
-  console.log(`✓ ${seedUsers.length} default users seeded`);
-
-  // Tasks — only seed on a truly empty task table.
-  //
-  // The seed counter always restarts from 001, so if user-created tasks already
-  // exist (e.g. MKT-048 after 47 seed rows + 1 real task) a re-seed would try
-  // to re-insert MKT-001…MKT-047 (no-ops via upsert) but the counter collision
-  // with real tasks grows over time and causes "unique task code" P2002 errors.
-  // Skipping task seeding when tasks already exist makes re-seeds fully safe.
-  const existingTaskCount = await prisma.task.count();
-  let createdTaskCount = 0;
-  if (existingTaskCount === 0) {
-    const verticalCounter = new Map<string, number>();
-    for (const t of TASKS) {
-      const verticalId = verticalMap.get(t.vertical)!;
-      const subVerticalId = t.subVertical ? subMap.get(`${t.vertical}::${t.subVertical}`) : null;
-      const priorityId = priorityMap.get(t.priority)!;
-      const ownerRoleId = t.ownerRole ? roleMap.get(t.ownerRole) : null;
-
-      const seq = (verticalCounter.get(t.vertical) ?? 0) + 1;
-      verticalCounter.set(t.vertical, seq);
-      const code = `${t.vertical}-${String(seq).padStart(3, "0")}`;
-
-      await prisma.task.create({
-        data: {
-          code,
-          title: t.title,
-          verticalId,
-          subVerticalId: subVerticalId ?? undefined,
-          priorityId,
-          ownerRoleId: ownerRoleId ?? undefined,
-          createdById: smUserId,
-          status: t.status ?? "NOT_STARTED",
-          source: t.source ?? "SELF_STRATEGY",
-          intervention: t.intervention ?? "NO",
-          frequency: t.frequency,
-          expectedOutput: t.expectedOutput,
-          lastUpdateAt: new Date(),
-        },
-      });
-      createdTaskCount++;
-    }
-    console.log(`✓ ${createdTaskCount} tasks seeded`);
-  } else {
-    console.log(`⏭  task seeding skipped — ${existingTaskCount} task(s) already exist`);
-  }
-
-  // Feature flags — bootstrap the registry so the Super Admin UI works on first
-  // visit. We only set defaults on insert; existing rows are left alone so the
-  // operator's toggles survive subsequent re-seeds.
-  const FEATURE_FLAGS = [
-    { key: "feature_flags_enforced", category: "core", label: "Enforce Feature Flags", description: "Master kill-switch.", defaultEnabled: true },
-    { key: "audit_log_v2", category: "security", label: "Comprehensive Audit Log", description: "Records every mutation with before/after snapshots." },
-    { key: "zod_validation", category: "security", label: "Strict Input Validation (Zod)", description: "Validate FormData with Zod schemas." },
-    { key: "task_pagination", category: "scale", label: "Cursor Pagination on Task Register", description: "Replaces 200-row cap with paged listing." },
-    { key: "task_bulk_actions", category: "scale", label: "Bulk Actions on Tasks", description: "Multi-select toolbar for bulk drop / reassign." },
-    { key: "csv_export", category: "scale", label: "CSV Export", description: "Download Task Register as CSV." },
-    { key: "drop_reason", category: "workflow", label: "Capture Reason on Drop", description: "Require and store a reason when dropping tasks." },
-    { key: "boss_instruction_workflow", category: "workflow", label: "Boss Instruction Activation Flow", description: "Activate / Park / Close states + draft Task." },
-    { key: "parking_auto_promote", category: "workflow", label: "Parking → Task Auto-Promote", description: "Activate a parking item into a draft Task." },
-    { key: "sla_engine", category: "workflow", label: "SLA Engine", description: "Computes slaDueAt from priority code." },
-    { key: "saved_views", category: "workflow", label: "Saved Filter Views", description: "Pin filter combos per user (Phase 2 scaffold)." },
-    { key: "notification_preferences", category: "workflow", label: "Per-User Notification Preferences", description: "Mute classes of notifications (Phase 2 scaffold)." },
-    { key: "breadcrumbs", category: "ux", label: "Breadcrumb Trail", description: "Adds breadcrumb above every portal page." },
-    { key: "dark_mode_toggle", category: "ux", label: "Dark Mode Toggle", description: "Sun/moon button in sidebar." },
-    { key: "toasts", category: "ux", label: "Toast Notifications", description: "Mounts the global Toaster." },
-    { key: "route_error_boundaries", category: "ux", label: "Per-Route Error Boundaries", description: "Friendly error pages per portal." },
-    { key: "optimistic_ui", category: "ux", label: "Optimistic UI on Mutations", description: "Update UI before server round-trip." },
-    { key: "backup_restore", category: "security", label: "Database Backup & Restore", description: "One-click pg_dump download + password-gated restore." },
-  ] as const;
-
-  try {
-    for (const f of FEATURE_FLAGS) {
-      await prisma.featureFlag.upsert({
-        where: { key: f.key },
-        update: { label: f.label, description: f.description, category: f.category },
-        create: {
-          key: f.key,
-          label: f.label,
-          description: f.description,
-          category: f.category,
-          enabled: ("defaultEnabled" in f && (f as { defaultEnabled?: boolean }).defaultEnabled) ?? false,
-        },
-      });
-    }
-    console.log(`✓ ${FEATURE_FLAGS.length} feature flags bootstrapped`);
-  } catch (err) {
-    console.warn("⚠️ Skipping feature-flag seed — run `npx prisma db push` first.", err);
-  }
-
-  console.log("\n✅ Seed complete.");
-  console.log("\nDefault logins:");
-  console.log("  Super Admin → sadmin@rathinam.in / SuperAdmin@123");
-  console.log("  CBO         → cbo@rathinam.in    / Cbo@123");
-  console.log("  SM          → sm@rathinam.in     / Sm@123");
 }
 
 main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+  .then(async () => { await prisma.$disconnect(); })
+  .catch(async (e) => { console.error(e); await prisma.$disconnect(); process.exit(1); });

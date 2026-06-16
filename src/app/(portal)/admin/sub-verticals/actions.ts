@@ -47,12 +47,9 @@ export async function deleteSubVerticalAction(id: string): Promise<SubVerticalRe
   const authed = await ensureAdmin();
   if (!authed.ok) return { success: false, error: authed.error };
 
-  const count = await prisma.task.count({ where: { subVerticalId: id } });
-  if (count > 0) {
-    return { success: false, error: `This sub-vertical has ${count} task(s). Reassign or remove them before deleting.` };
-  }
-
   try {
+    // Nullify the subVerticalId on associated tasks before deleting the sub-vertical.
+    await prisma.task.updateMany({ where: { subVerticalId: id }, data: { subVerticalId: null } });
     await prisma.subVertical.delete({ where: { id } });
   } catch (err) {
     console.error("[deleteSubVerticalAction] DB error", err);

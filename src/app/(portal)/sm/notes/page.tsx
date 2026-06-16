@@ -1,84 +1,61 @@
+import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { canManageTasks } from "@/lib/rbac";
-import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/page-header";
-import { Card, CardContent } from "@/components/ui/card";
-import { formatRelative } from "@/lib/utils";
-import { Mic, Mail } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatusBadge, PriorityBadge } from "@/components/status-badges";
+import { Badge } from "@/components/ui/badge";
+import { formatRelative, formatDate } from "@/lib/utils";
+import { CboNotePlayer } from "./note-player";
 
-export default async function SmNotes() {
+export default async function SmNotesPage() {
   const session = await auth();
   if (!canManageTasks(session?.user.systemRole)) redirect("/");
 
-  // SMs see all notes whose audience role matches theirs.
-  const notes = await prisma.note.findMany({
-    where: { audienceRole: session.user.systemRole },
-    orderBy: { createdAt: "desc" },
-    take: 100,
-    select: {
-      id: true,
-      text: true,
-      audioMime: true,
-      audioDurationS: true,
-      createdAt: true,
-      author: { select: { name: true, email: true, systemRole: true } },
+  const tasks = await prisma.task.findMany({
+    where: { cboNotes: { some: {} }, status: { not: "DROPPED" } },
+    orderBy: [{ updatedAt: "desc" }],
+    include: {
+      vertical: true,
+      priority: true,
+      teamAssignments: { include: { team: true } },
+      assignees: { include: { member: true } },
+      cboNotes: { orderBy: { createdAt: "desc" }, include: { author: { select: { name: true } } } },
     },
   });
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <PageHeader
-        title="Notes from CBO"
-        description="Messages and voice notes sent by the CBO."
-      />
-
-      {notes.length === 0 ? (
-        <Card>
-          <CardContent className="p-6 text-center text-sm text-muted-foreground">
-            No notes yet. New notes from the CBO appear here in real time.
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {notes.map((n) => (
-            <Card key={n.id} className="hover-lift">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/15 text-primary">
-                      <Mail className="h-4 w-4" />
-                    </span>
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold truncate">{n.author.name}</div>
-                      <div className="text-[11px] text-muted-foreground truncate">
-                        {n.author.email} · {n.author.systemRole}
-                      </div>
-                    </div>
+      <PageHeader title="Notes from CBO" description="Tasks with voice or text instructions from the Chief Business Officer." />
+      <Card><CardHeader><CardTitle>{tasks.length} task{tasks.length !== 1 ? "s" : ""} with notes</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          {tasks.length === 0 ? <div className="text-sm text-muted-foreground py-6 text-center">No tasks with CBO notes yet.</div> : tasks.map((t) => {
+            const assigneeNames = t.teamAssignments.length > 0 ? t.teamAssignments.map((ta) => `[${ta.team.name}]`).join(", ") : t.assignees.map((a) => a.member.name).join(", ") || "—";
+            return (
+              <div key={t.id} className="rounded-lg border border-border p-4 space-y-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 mb-1"><span className="font-mono text-[10px] font-bold text-muted-foreground">{t.code}</span><span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ backgroundColor: t.vertical.colorHex }}>{t.vertical.name}</span></div>
+                    <div className="text-sm font-semibold">{t.title}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">{assigneeNames}{t.deadline ? ` · Deadline: ${formatDate(t.deadline)}` : ""}</div>
                   </div>
-                  <div className="text-[11px] text-muted-foreground shrink-0">
-                    {formatRelative(n.createdAt)}
-                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0"><PriorityBadge code={t.priority.code} /><StatusBadge status={t.status} /></div>
                 </div>
-
-                {n.text && <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">{n.text}</p>}
-
-                {n.audioMime && (
-                  <div className="mt-3 flex items-center gap-2 rounded-lg border border-border bg-muted/30 p-2.5">
-                    <Mic className="h-4 w-4 text-primary" />
-                    <audio src={`/api/notes/${n.id}/audio`} controls className="flex-1" preload="metadata" />
-                    {n.audioDurationS ? (
-                      <span className="text-[11px] tabular-nums text-muted-foreground">
-                        {Math.floor(n.audioDurationS / 60)}:{String(n.audioDurationS % 60).padStart(2, "0")}
-                      </span>
-                    ) : null}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+                <div className="space-y-2 pl-3 border-l-2 border-primary/30">
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Instructions ({t.cboNotes.length})</div>
+                  {t.cboNotes.map((n) => (
+                    <div key={n.id} className="rounded border border-border bg-muted/20 p-2.5">
+                      {n.kind === "text" ? <p className="text-sm whitespace-pre-wrap">{n.text}</p> : <CboNotePlayer audioBase64={n.audioBytes ? Buffer.from(n.audioBytes).toString("base64") : null} audioMime={n.audioMime ?? "audio/webm"} durationS={n.audioDurationS} />}
+                      <div className="mt-1.5 flex items-center gap-2 text-[10px] text-muted-foreground"><Badge variant="info" className="text-[9px]">{n.kind === "text" ? "Text" : "Voice"}</Badge><span>{n.author.name}</span><span>·</span><span>{new Date(n.createdAt).toLocaleString()}</span></div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
     </div>
   );
 }

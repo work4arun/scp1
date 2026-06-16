@@ -26,132 +26,93 @@ model User {
   name         String
   passwordHash String
   systemRole   SystemRole
-  ownerRoleId  String?   // optional link to OwnerRole (e.g., "Marketing Head")
-  ownerRole    OwnerRole? @relation(fields: [ownerRoleId], references: [id])
   active       Boolean   @default(true)
-  lastSeenAt   DateTime? // updated each time user opens dashboard — powers "since last visit"
+  lastSeenAt   DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  ownedTasks      Task[]          @relation("TaskOwner")
-  subOwnedTasks   Task[]          @relation("TaskSubOwner")
   createdTasks    Task[]          @relation("TaskCreator")
+  cboNotes        CboNote[]
   taskUpdates     TaskUpdate[]
-  bossInstructions BossInstruction[] @relation("InstructionCapturedBy")
-  parkingItems    ParkingLot[]    @relation("ParkingCapturedBy")
-  interventions   Intervention[]  @relation("InterventionRaisedBy")
   pins            Pin[]
   auditLogs       AuditLog[]
-  availabilities  Availability[]
-  organizedAppointments Appointment[] @relation("AppointmentOrganizer")
-  attendingAppointments Appointment[] @relation("AppointmentAttendee")
-  notifications   Notification[]    @relation("NotificationRecipient")
-  sentNotifications Notification[]  @relation("NotificationSender")
-  timers          Timer[]
-  authoredNotes   Note[]            @relation("NoteAuthor")
 
   @@index([systemRole])
 }
 
-// In-app notifications — used to surface SM activity to the CBO with toasts + sound.
-model Notification {
+// ────────────────────────────────────────────────────────────
+// Teams & Members
+// ────────────────────────────────────────────────────────────
+
+model Team {
   id          String   @id @default(cuid())
-  recipientId String
-  recipient   User     @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
-  senderId    String?
-  sender      User?    @relation("NotificationSender", fields: [senderId], references: [id])
-  kind        String   // e.g., task.created, task.updated, task.escalated, appointment.requested
-  title       String
-  body        String?
-  link        String?
-  refId       String?  // related entity id (taskId, interventionId, appointmentId)
-  seenAt      DateTime?
+  name        String   @unique
+  description String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members         TeamMember[]
+  taskAssignments TaskTeamAssignment[]
+
+  @@index([active])
+}
+
+model TeamMember {
+  id          String  @id @default(cuid())
+  teamId      String
+  team        Team    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name        String
+  email       String
+  designation String?
+  sortOrder   Int     @default(0)
+  active      Boolean @default(true)
   createdAt   DateTime @default(now())
 
-  @@index([recipientId, seenAt])
-  @@index([createdAt])
+  taskAssignments TaskAssignment[]
+
+  @@unique([teamId, email])
+  @@index([teamId])
+  @@index([email])
 }
 
-// ────────────────────────────────────────────────────────────
-// Availability — recurring weekly working hours per user
-// ────────────────────────────────────────────────────────────
-
-model Availability {
+// Junction: team assigned to a task (with email toggle)
+model TaskTeamAssignment {
   id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  dayOfWeek Int      // 0=Sunday..6=Saturday
-  startMin  Int      // minutes from midnight (e.g., 540 = 9:00am)
-  endMin    Int      // e.g., 720 = 12:00pm
-  label     String?  // optional ("Decision slot", "Open hours")
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  sendEmail Boolean  @default(true) // default: send email to all team members
+  assignedAt DateTime @default(now())
 
-  @@index([userId, dayOfWeek])
+  @@unique([taskId, teamId])
+  @@index([taskId])
+  @@index([teamId])
 }
 
-enum AppointmentStatus {
-  PENDING
-  CONFIRMED
-  REJECTED
-  CANCELLED
-  COMPLETED
+// Junction: individual member assignment to a task (with email toggle)
+model TaskAssignment {
+  id        String     @id @default(cuid())
+  taskId    String
+  task      Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  memberId  String
+  member    TeamMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  sendEmail Boolean    @default(true) // default: send email to this member
+  assignedAt DateTime   @default(now())
+
+  @@unique([taskId, memberId])
+  @@index([taskId])
+  @@index([memberId])
 }
 
-enum AppointmentRecurrence {
-  NONE
-  WEEKLY
-  MONTHLY
-}
 
-// ────────────────────────────────────────────────────────────
-// Appointment — one-on-one (organizer ↔ attendee) meetings
-// ────────────────────────────────────────────────────────────
-
-model Appointment {
-  id              String   @id @default(cuid())
-  title           String
-  description     String?
-  agenda          String?
-  organizerId     String
-  organizer       User     @relation("AppointmentOrganizer", fields: [organizerId], references: [id])
-  attendeeId      String
-  attendee        User     @relation("AppointmentAttendee", fields: [attendeeId], references: [id])
-  startAt         DateTime
-  endAt           DateTime
-  location        String?
-  status          AppointmentStatus @default(PENDING)
-  recurrence      AppointmentRecurrence @default(NONE)
-  recurrenceUntil DateTime?
-  parentId        String?  // for instances generated from a recurring parent
-
-  // Links — closes the loop with the rest of the system
-  interventionId  String?
-  intervention    Intervention? @relation(fields: [interventionId], references: [id])
-  taskId          String?
-  task            Task?    @relation("AppointmentTask", fields: [taskId], references: [id])
-  verticalId      String?
-
-  // Outcome — recorded after the meeting
-  outcome         String?
-
-  rejectionReason String?
-  cancelledReason String?
-
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  @@index([attendeeId, startAt])
-  @@index([organizerId, startAt])
-  @@index([status])
-}
-
-// CBO can pin tasks/interventions/verticals to keep them visible across sessions.
+// CBO can pin tasks/verticals to keep them visible across sessions.
 model Pin {
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  kind      String   // "task" | "intervention" | "vertical"
+  kind      String   // "task" | "vertical"
   refId     String   // id of the referenced entity
   note      String?
   createdAt DateTime @default(now())
@@ -160,19 +121,17 @@ model Pin {
   @@index([userId])
 }
 
-// Light global audit log — written by Super Admin actions and high-impact ops.
-// Audit Log v2 (gated by audit_log_v2 flag) additionally writes the before/after JSON
-// snapshot for any mutation routed through lib/audit.ts.
+// Light global audit log
 model AuditLog {
   id        String   @id @default(cuid())
   userId    String?
   user      User?    @relation(fields: [userId], references: [id])
-  action    String   // e.g., "user.create", "vertical.delete", "intervention.resolve"
-  entity    String   // "User" | "Vertical" | etc.
+  action    String
+  entity    String
   entityId  String?
   note      String?
-  before    Json?    // pre-mutation snapshot (audit_log_v2)
-  after     Json?    // post-mutation snapshot (audit_log_v2)
+  before    Json?
+  after     Json?
   ip        String?
   userAgent String?
   createdAt DateTime @default(now())
@@ -183,90 +142,27 @@ model AuditLog {
   @@index([action])
 }
 
-// Notes — composed by CBO from /cbo/notes and broadcast to every active SM.
-// Each note can carry text, an audio recording, or both. Audio is stored
-// inline as bytea so a single Postgres row holds the entire payload — keep
-// recordings short (≤ 60 s) for sane database growth.
-model Note {
-  id             String   @id @default(cuid())
-  authorId       String
-  author         User     @relation("NoteAuthor", fields: [authorId], references: [id])
-  // Audience is implicit: every active user holding this systemRole at delivery
-  // time. We snapshot the role on the row so historical filtering still works
-  // even if the audience definition changes.
-  audienceRole   SystemRole @default(SM)
-  text           String?
-  audioBytes     Bytes?
-  audioMime      String?  // e.g. "audio/webm;codecs=opus"
-  audioDurationS Int?
-  createdAt      DateTime @default(now())
-
-  @@index([createdAt])
-  @@index([authorId, createdAt])
-}
-
-// Personal countdown timers (the "set a 25-min meeting timer" feature on the
-// CBO master dashboard). When fireAt arrives we send an email alarm to the
-// owner. `cancelledAt` and `sentAt` are mutually exclusive — both null means
-// the timer is still ticking.
-model Timer {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  label       String?
-  fireAt      DateTime
-  sent        Boolean  @default(false)
-  sentAt      DateTime?
-  cancelledAt DateTime?
-  createdAt   DateTime @default(now())
-
-  @@index([userId, sent, cancelledAt])
-  @@index([fireAt])
-}
-
-// Feature Flags — controlled exclusively from the Super Admin UI at /admin/features.
-// Flags ship disabled-by-default; the seed script populates the registry on first boot.
+// Feature Flags
 model FeatureFlag {
-  key         String   @id              // canonical key (e.g., "audit_log_v2")
+  key         String   @id
   enabled     Boolean  @default(false)
-  category    String   @default("general") // "core" | "workflow" | "ux" | "scale" | "security"
-  label       String                    // display label
-  description String                    // user-facing explanation
+  category    String   @default("general")
+  label       String
+  description String
   updatedAt   DateTime @updatedAt
   updatedById String?
 
   @@index([category])
 }
 
-// OwnerRole = the operational role assigned to a task owner
-// (e.g., "Marketing Head", "RTC Head", "Placement Head"). Configurable by Super Admin.
-//
-// ownerName + ownerEmail are a simple contact record — NOT a login account.
-// They identify the person currently responsible for the role and serve as
-// the email recipient for task notifications. Logging into the app is a
-// separate concept handled by the User model + systemRole (SM / CBO /
-// SUPER_ADMIN).
-model OwnerRole {
-  id          String  @id @default(cuid())
-  name        String  @unique
-  description String?
-  ownerName   String?  // contact name (no login implied)
-  ownerEmail  String?  // contact email for notifications
-  active      Boolean @default(true)
-  createdAt   DateTime @default(now())
-
-  users User[]   // legacy: actual logged-in users that happen to hold this role
-  tasks Task[]
-}
-
 // ────────────────────────────────────────────────────────────
-// Verticals & Sub-Verticals (configurable by Super Admin)
+// Verticals & Sub-Verticals
 // ────────────────────────────────────────────────────────────
 
 model Vertical {
   id          String  @id @default(cuid())
   name        String  @unique
-  code        String  @unique // e.g., MKT, RTC, PLC, AIC, RGU, SSP
+  code        String  @unique
   description String?
   colorHex    String  @default("#4f46e5")
   sortOrder   Int     @default(0)
@@ -295,24 +191,24 @@ model SubVertical {
 }
 
 // ────────────────────────────────────────────────────────────
-// Priority (configurable by Super Admin)
+// Priority
 // ────────────────────────────────────────────────────────────
 
 model Priority {
   id            String  @id @default(cuid())
-  code          String  @unique // P1, P2, P3, P4 (or custom)
+  code          String  @unique
   label         String
   description   String?
-  reviewCadence String? // "Daily tracking", "Twice-a-week review", etc.
+  reviewCadence String?
   colorHex      String  @default("#6b7280")
-  rank          Int     // ordering: lower number = higher priority
+  rank          Int
   active        Boolean @default(true)
 
   tasks Task[]
 }
 
 // ────────────────────────────────────────────────────────────
-// Status (fixed set, but stored for flexibility)
+// Status & Source enums
 // ────────────────────────────────────────────────────────────
 
 enum TaskStatus {
@@ -347,12 +243,12 @@ enum InterventionFlag {
 }
 
 // ────────────────────────────────────────────────────────────
-// Tasks (the heart of the register)
+// Tasks
 // ────────────────────────────────────────────────────────────
 
 model Task {
   id              String   @id @default(cuid())
-  code            String   @unique // auto-generated like MKT-001
+  code            String   @unique
   title           String
   description     String?
   verticalId      String
@@ -363,40 +259,52 @@ model Task {
   priority        Priority @relation(fields: [priorityId], references: [id])
   status          TaskStatus @default(NOT_STARTED)
   source          TaskSource @default(SELF_STRATEGY)
-  ownerUserId     String?
-  ownerUser       User?    @relation("TaskOwner", fields: [ownerUserId], references: [id])
-  subOwnerId      String?
-  subOwner        User?    @relation("TaskSubOwner", fields: [subOwnerId], references: [id])
-  ownerRoleId     String?
-  ownerRole       OwnerRole? @relation(fields: [ownerRoleId], references: [id])
+  // Multi-team assignment
+  teamAssignments TaskTeamAssignment[]
+  // Individual member assignments
+  assignees       TaskAssignment[]
   createdById     String
   createdBy       User     @relation("TaskCreator", fields: [createdById], references: [id])
   deadline        DateTime?
-  frequency       String?  // "Daily", "Weekly", "Monthly", "Need-based"
+  frequency       String?
   supportNeeded   String?
   delayReason     String?
   nextAction      String?
   intervention    InterventionFlag @default(NO)
   expectedOutput  String?
   lastUpdateAt    DateTime?
-  droppedAt       DateTime?  // soft-delete timestamp; restore window = 30 days
-  dropReason      String?    // captured at drop-time when feature `drop_reason` is enabled
-  slaDueAt        DateTime?  // computed when feature `sla_engine` is enabled — see lib/sla.ts
-  slaBreachedAt   DateTime?  // set when SLA passes without completion
-  sourceInstructionId String? // link back to BossInstruction if activated from one
-  sourceParkingId String?     // link back to ParkingLot if promoted from there
+  droppedAt       DateTime?
+  dropReason      String?
+  slaDueAt        DateTime?
+  slaBreachedAt   DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  updates       TaskUpdate[]
-  interventions Intervention[]
-  appointments  Appointment[] @relation("AppointmentTask")
+  cboNotes       CboNote[]
+  updates        TaskUpdate[]
 
   @@index([verticalId, status])
   @@index([priorityId])
-  @@index([ownerUserId])
-  @@index([subOwnerId])
   @@index([droppedAt])
+}
+
+// CBO notes (voice + text)
+model CboNote {
+  id           String   @id @default(cuid())
+  taskId       String
+  task         Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  authorId     String
+  author       User     @relation(fields: [authorId], references: [id])
+  kind         String   // "text" | "voice"
+  text         String?
+  audioBytes   Bytes?
+  audioMime    String?
+  audioDurationS Int?
+  createdAt    DateTime @default(now())
+
+  @@index([taskId])
+  @@index([authorId])
+  @@index([createdAt])
 }
 
 model TaskUpdate {
@@ -410,82 +318,4 @@ model TaskUpdate {
   createdAt DateTime @default(now())
 
   @@index([taskId])
-}
-
-// ────────────────────────────────────────────────────────────
-// Boss Task Register
-// ────────────────────────────────────────────────────────────
-
-enum BossInstructionStatus {
-  CAPTURED
-  ACTIVATED
-  PARKED
-  CLOSED
-}
-
-model BossInstruction {
-  id              String   @id @default(cuid())
-  receivedAt      DateTime @default(now())
-  instruction     String
-  source          TaskSource
-  verticalId      String?
-  capturedById    String
-  capturedBy      User     @relation("InstructionCapturedBy", fields: [capturedById], references: [id])
-  // Legacy free-text status; kept for backward compat. New code reads `state` (enum).
-  status          String   @default("Captured")
-  state           BossInstructionStatus @default(CAPTURED)
-  responseGiven   String?
-  linkedTaskId    String?
-  activatedAt     DateTime?
-  createdAt       DateTime @default(now())
-
-  @@index([state])
-}
-
-// ────────────────────────────────────────────────────────────
-// Dr. BN Intervention Register
-// ────────────────────────────────────────────────────────────
-
-model Intervention {
-  id              String   @id @default(cuid())
-  taskId          String?
-  task            Task?    @relation(fields: [taskId], references: [id])
-  verticalId      String?
-  issue           String
-  whyNeeded       String
-  decisionRequired String
-  deadline        DateTime?
-  noteAttached    Boolean  @default(false)
-  resolved        Boolean  @default(false)
-  resolutionNote  String?
-  decisionType    String?  // "approve" | "defer" | "need_info" | custom
-  snoozedUntil    DateTime? // CBO can snooze; reappears in queue at/after this time
-  cboNote         String?   // private note CBO can drop for SM without escalating publicly
-  raisedById      String
-  raisedBy        User     @relation("InterventionRaisedBy", fields: [raisedById], references: [id])
-  appointments    Appointment[]
-  createdAt       DateTime @default(now())
-  resolvedAt      DateTime?
-
-  @@index([resolved])
-  @@index([snoozedUntil])
-}
-
-// ────────────────────────────────────────────────────────────
-// Parking Lot
-// ────────────────────────────────────────────────────────────
-
-model ParkingLot {
-  id              String   @id @default(cuid())
-  idea            String
-  suggestedBy     String
-  verticalId      String?
-  expectedImpact  String?  // High / Medium / Low
-  urgency         String?  // High / Medium / Low
-  decision        String   @default("Park") // Park / Activate / Review
-  reviewDate      DateTime?
-  remarks         String?
-  capturedById    String
-  capturedBy      User     @relation("ParkingCapturedBy", fields: [capturedById], references: [id])
-  createdAt       DateTime @default(now())
 }

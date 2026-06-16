@@ -108,6 +108,10 @@ const config: Config = {
         "spin-slow": {
           to: { transform: "rotate(360deg)" },
         },
+        "scale-in": {
+          from: { transform: "scale(0.95)", opacity: "0" },
+          to: { transform: "scale(1)", opacity: "1" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -122,6 +126,7 @@ const config: Config = {
         sweep: "sweep 6s ease-in-out infinite",
         twinkle: "twinkle 2.5s ease-in-out infinite",
         "spin-slow": "spin-slow 12s linear infinite",
+        "scale-in": "scale-in 0.2s ease-out",
       },
     },
   },

@@ -6,30 +6,24 @@ import { useState } from "react";
 import {
   LayoutDashboard,
   ListChecks,
-  AlertTriangle,
-  Archive,
-  Settings,
   Users,
   Tags,
   Layers,
   Menu,
   X,
-  Calendar,
   Inbox,
-  Sparkles,
-  Building2,
   History,
   ToggleLeft,
+  Archive,
   Database,
+  Mail,
   StickyNote,
   ChevronDown,
   ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SystemRole } from "@prisma/client";
-import { ROLE_LABELS } from "@/lib/rbac";
 import { SignOutButton } from "@/components/sign-out-button";
-import { NotificationBell } from "@/components/notification-bell";
 import { DarkModeToggle } from "@/components/dark-mode-toggle";
 
 type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }> };
@@ -40,11 +34,11 @@ const ADMIN_NAV_ITEMS: NavItem[] = [
   { href: "/admin/verticals", label: "Verticals", icon: Layers },
   { href: "/admin/sub-verticals", label: "Sub-Verticals", icon: Layers },
   { href: "/admin/priorities", label: "Priorities", icon: Tags },
-  { href: "/admin/roles", label: "Owner Roles", icon: Users },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/tasks", label: "All Tasks", icon: ListChecks },
   { href: "/admin/audit", label: "Audit Log", icon: History },
   { href: "/admin/features", label: "Feature Flags", icon: ToggleLeft },
+  { href: "/admin/teams", label: "Teams", icon: Users },
   { href: "/admin/backup", label: "Backup & Restore", icon: Database },
 ];
 
@@ -56,14 +50,9 @@ function navSectionsFor(role: SystemRole): NavSection[] {
     return [{
       label: "Chief Business Officer",
       items: [
-        { href: "/cbo", label: "Master Dashboard", icon: LayoutDashboard },
-        { href: "/cbo/daily", label: "Today's Summary", icon: Calendar },
-        { href: "/cbo/weekly", label: "Weekly Review", icon: Sparkles },
-        { href: "/cbo/intervention", label: "My Decisions", icon: AlertTriangle },
-        { href: "/calendar", label: "Calendar", icon: Calendar },
-        { href: "/cbo/parking", label: "Parking Lot", icon: Archive },
-        { href: "/cbo/verticals", label: "Verticals", icon: Building2 },
-        { href: "/cbo/notes", label: "Notes", icon: StickyNote },
+        { href: "/cbo", label: "Overview", icon: LayoutDashboard },
+        { href: "/cbo/tasks", label: "All Tasks", icon: ListChecks },
+        { href: "/cbo/parked", label: "Parking Lot", icon: Archive },
       ],
     }];
   }
@@ -75,24 +64,16 @@ function navSectionsFor(role: SystemRole): NavSection[] {
         { href: "/sm", label: "Today", icon: LayoutDashboard },
         { href: "/sm/tasks", label: "Tasks", icon: ListChecks },
         { href: "/sm/new-task", label: "New Task", icon: Inbox },
-        { href: "/sm/boss", label: "Boss Register", icon: Inbox },
-        { href: "/sm/intervention", label: "Escalations", icon: AlertTriangle },
         { href: "/sm/notes", label: "Notes from CBO", icon: StickyNote },
-        { href: "/calendar", label: "Calendar", icon: Calendar },
-        { href: "/sm/parking", label: "Parking Lot", icon: Archive },
+        { href: "/sm/parked", label: "Parking Lot", icon: Archive },
+        { href: "/sm/emails", label: "Emails", icon: Mail },
       ],
     },
     { label: "Super Admin", items: ADMIN_NAV_ITEMS, collapsible: true },
   ];
 }
 
-// Flat list of all items for a role (used where a single flat list is needed)
-function navItemsFor(role: SystemRole): NavItem[] {
-  return navSectionsFor(role).flatMap((s) => s.items);
-}
-
 function bottomNavFor(role: SystemRole): NavItem[] {
-  // Show 4 most-used items as bottom nav on mobile
   if (role === "SUPER_ADMIN") {
     return [
       { href: "/admin", label: "Home", icon: LayoutDashboard },
@@ -104,16 +85,12 @@ function bottomNavFor(role: SystemRole): NavItem[] {
   if (role === "CBO") {
     return [
       { href: "/cbo", label: "Home", icon: LayoutDashboard },
-      { href: "/cbo/daily", label: "Today", icon: Calendar },
-      { href: "/cbo/intervention", label: "Decide", icon: AlertTriangle },
-      { href: "/cbo/weekly", label: "Weekly", icon: Sparkles },
     ];
   }
   return [
     { href: "/sm", label: "Today", icon: LayoutDashboard },
     { href: "/sm/tasks", label: "Tasks", icon: ListChecks },
     { href: "/sm/new-task", label: "New", icon: Inbox },
-    { href: "/sm/intervention", label: "Escalate", icon: AlertTriangle },
   ];
 }
 
@@ -155,7 +132,6 @@ export function AppShell({
         </div>
         <div className="flex items-center gap-1">
           {darkModeToggleEnabled && <DarkModeToggle />}
-          <NotificationBell enabled={role === "CBO" || role === "SUPER_ADMIN"} />
           <SignOutButton variant="icon" />
         </div>
       </header>
@@ -171,7 +147,6 @@ export function AppShell({
                 <div className="text-[11px] text-muted-foreground truncate">Senior Manager Portal</div>
               </div>
             </div>
-            <NotificationBell enabled={role === "CBO" || role === "SUPER_ADMIN"} />
           </div>
           <nav className="flex-1 overflow-y-auto px-3 pb-4">
             {sections.map((section) => (
@@ -297,8 +272,11 @@ export function AppShell({
         </main>
       </div>
 
-      {/* Mobile bottom nav */}
-      <nav className="fixed bottom-0 left-0 right-0 z-30 grid grid-cols-4 gap-1 border-t border-border bg-card/95 px-2 py-1 backdrop-blur safe-bottom lg:hidden">
+      {/* Mobile bottom nav — dynamic grid based on item count */}
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-30 grid gap-1 border-t border-border bg-card/95 px-2 py-1 backdrop-blur safe-bottom lg:hidden"
+        style={{ gridTemplateColumns: `repeat(${bottomItems.length}, minmax(0, 1fr))` }}
+      >
         {bottomItems.map((item) => {
           const active = pathname === item.href;
           const Icon = item.icon;
