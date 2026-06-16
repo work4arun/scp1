@@ -69,17 +69,17 @@ install_deps() {
 # ──────────────────────────────────────────────────────────────────────────────
 pull_code() {
   cd "${SCRIPT_DIR}"
-  log "Pulling latest code..."
+  log "Pulling latest code (force-resetting any local changes)..."
   git fetch --all --prune
   git checkout "${GIT_BRANCH}"
-  git pull --ff-only origin "${GIT_BRANCH}"
+  git reset --hard "origin/${GIT_BRANCH}"
   log "Now at commit: $(git rev-parse --short HEAD)"
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
 setup_env() {
   # Navigate to the target application directory where docker-compose runs
-  cd "${APP_DIR:-${SCRIPT_DIR}}"
+  cd "${SCRIPT_DIR}"
 
   if [ -z "${PUBLIC_IP}" ]; then
     PUBLIC_IP=$(curl -s --max-time 5 http://checkip.amazonaws.com 2>/dev/null || curl -s --max-time 5 https://ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
