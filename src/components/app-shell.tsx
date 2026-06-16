@@ -67,7 +67,6 @@ function navSectionsFor(role: SystemRole): NavSection[] {
         { href: "/sm/new-task", label: "New Task", icon: Inbox },
         { href: "/sm/notes", label: "Notes from CBO", icon: StickyNote },
         { href: "/sm/parked", label: "Parking Lot", icon: Archive },
-        { href: "/sm/emails", label: "Emails", icon: Mail },
       ],
     },
     { label: "Super Admin", items: ADMIN_NAV_ITEMS, collapsible: true },

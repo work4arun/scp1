@@ -8,6 +8,8 @@ import type { TaskSource, InterventionFlag } from "@prisma/client";
 import { writeAudit } from "@/lib/audit";
 import { friendlyPrismaError } from "@/lib/prisma-errors";
 import { computeNextTaskCode } from "@/lib/task-code";
+import { getListmonkConfig } from "@/lib/listmonk-config";
+import { sendTxEmail } from "@/lib/listmonk";
 
 export type CreateTaskResult =
   | { success: true; id: string }
@@ -34,14 +36,13 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
   // Multi-team IDs (comma-separated)
   const teamIdsRaw = (formData.get("teamIds") as string) || "";
   const teamIds = teamIdsRaw ? teamIdsRaw.split(",").map((id) => id.trim()).filter(Boolean) : [];
-  // Per-team email toggles: teamId_sendEmail fields
   const teamSendEmailMap = new Map<string, boolean>();
   for (const tid of teamIds) {
     const sendVal = formData.get(`teamsend_${tid}`);
-    teamSendEmailMap.set(tid, sendVal !== "false"); // default true if not present
+    teamSendEmailMap.set(tid, sendVal !== "false");
   }
 
-  // Individual member IDs (comma-separated)  
+  // Individual member IDs (comma-separated)
   const memberIdsRaw = (formData.get("memberIds") as string) || "";
   const memberIds = memberIdsRaw ? memberIdsRaw.split(",").map((id) => id.trim()).filter(Boolean) : [];
   const memberSendEmailMap = new Map<string, boolean>();
@@ -53,13 +54,15 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
   if (!title)      return { success: false, error: "Task title is required." };
   if (!verticalId) return { success: false, error: "Please select a vertical." };
   if (!priorityId) return { success: false, error: "Please select a priority." };
-
   if (teamIds.length === 0 && memberIds.length === 0) {
     return { success: false, error: "Please assign at least one team or member." };
   }
 
   const vertical = await prisma.vertical.findUnique({ where: { id: verticalId } });
   if (!vertical) return { success: false, error: "Selected vertical was not found." };
+
+  const priority = await prisma.priority.findUnique({ where: { id: priorityId }, select: { code: true } });
+  const priorityCode = priority?.code || "P4";
 
   let created;
   const MAX_ATTEMPTS = 5;
@@ -87,28 +90,16 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
           },
         });
 
-        // Create team assignments
         if (teamIds.length > 0) {
           await tx.taskTeamAssignment.createMany({
-            data: teamIds.map((tid) => ({
-              taskId: task.id,
-              teamId: tid,
-              sendEmail: teamSendEmailMap.get(tid) ?? true,
-            })),
+            data: teamIds.map((tid) => ({ taskId: task.id, teamId: tid, sendEmail: teamSendEmailMap.get(tid) ?? true })),
           });
         }
-
-        // Create individual member assignments
         if (memberIds.length > 0) {
           await tx.taskAssignment.createMany({
-            data: memberIds.map((mid) => ({
-              taskId: task.id,
-              memberId: mid,
-              sendEmail: memberSendEmailMap.get(mid) ?? true,
-            })),
+            data: memberIds.map((mid) => ({ taskId: task.id, memberId: mid, sendEmail: memberSendEmailMap.get(mid) ?? true })),
           });
         }
-
         return task;
       }, { maxWait: 30_000, timeout: 30_000 });
       lastErr = null;
@@ -127,7 +118,58 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
 
   revalidatePath("/sm"); revalidatePath("/sm/tasks"); revalidatePath("/cbo");
 
-  await writeAudit({ actorId: session.user.id, action: "task.create", entity: "Task", entityId: created.id, after: created, note: `Created ${created.code}` });
+  // ── Send emails via Listmonk ──────────────────────────────────────────
+  const lmConfig = await getListmonkConfig();
+  if (lmConfig) {
+    const recipients: { email: string; name: string }[] = [];
 
+    if (teamIds.length > 0) {
+      const teamMembers = await prisma.teamMember.findMany({
+        where: { teamId: { in: teamIds }, active: true },
+        select: { name: true, email: true },
+      });
+      for (const m of teamMembers) {
+        const shouldSend = teamIds.some((tid) => teamSendEmailMap.get(tid) !== false);
+        if (shouldSend) recipients.push({ email: m.email, name: m.name });
+      }
+    }
+
+    if (memberIds.length > 0) {
+      const members = await prisma.teamMember.findMany({
+        where: { id: { in: memberIds }, active: true },
+        select: { id: true, name: true, email: true },
+      });
+      for (const m of members) {
+        if (memberSendEmailMap.get(m.id) !== false) recipients.push({ email: m.email, name: m.name });
+      }
+    }
+
+    const sent = new Set<string>();
+    for (const r of recipients) {
+      if (sent.has(r.email)) continue;
+      sent.add(r.email);
+
+      const log = await prisma.emailLog.create({
+        data: { taskId: created.id, recipient: r.email, subject: `[SCP] New Task: ${created.code}`, status: "pending" },
+      });
+
+      const result = await sendTxEmail(lmConfig, {
+        subscriberEmail: r.email,
+        subscriberName: r.name,
+        taskTitle: created.title,
+        priority: priorityCode,
+        deadline: deadlineStr || undefined,
+        expectedOutput: expectedOutput || undefined,
+        drBnIntervention: intervention !== "NO",
+      });
+
+      await prisma.emailLog.update({
+        where: { id: log.id },
+        data: { status: result.success ? "sent" : "failed", errorMsg: result.error || null },
+      });
+    }
+  }
+
+  await writeAudit({ actorId: session.user.id, action: "task.create", entity: "Task", entityId: created.id, after: created, note: `Created ${created.code}` });
   return { success: true, id: created.id };
 }

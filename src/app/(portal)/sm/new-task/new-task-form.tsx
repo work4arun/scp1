@@ -187,7 +187,7 @@ export function NewTaskForm({
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Field label="Deadline" htmlFor="deadline"><Input id="deadline" name="deadline" type="date" /></Field>
+        <Field label="Deadline" htmlFor="deadline"><Input id="deadline" name="deadline" type="datetime-local" /></Field>
         <Field label="Frequency" htmlFor="frequency"><Select id="frequency" name="frequency"><option value="">—</option><option>Daily</option><option>Weekly</option><option>Monthly</option><option>Need-based</option><option>Campaign-based</option><option>Event-based</option></Select></Field>
       </div>
 

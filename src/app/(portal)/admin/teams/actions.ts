@@ -53,16 +53,19 @@ export async function saveListmonkConfigAction(formData: FormData): Promise<List
   const authed = await ensureAdmin();
   if (!authed.ok) return { success: false, error: authed.error };
 
+  const baseUrl = String(formData.get("baseUrl") || "").trim();
   const userId = String(formData.get("userId") || "").trim();
   const apiKey = String(formData.get("apiKey") || "").trim();
+  const templateIdRaw = String(formData.get("templateId") || "").trim();
+  const templateId = templateIdRaw ? parseInt(templateIdRaw, 10) : null;
 
-  if (!userId || !apiKey) return { success: false, error: "Both username and API key are required." };
+  if (!baseUrl || !userId || !apiKey) return { success: false, error: "Base URL, username, and API key are required." };
 
   try {
     await prisma.listmonkConfig.upsert({
       where: { id: "default" },
-      update: { userId, apiKey, updatedBy: authed.userId },
-      create: { id: "default", userId, apiKey, updatedBy: authed.userId },
+      update: { baseUrl, userId, apiKey, templateId, updatedBy: authed.userId },
+      create: { id: "default", baseUrl, userId, apiKey, templateId, updatedBy: authed.userId },
     });
   } catch (err) {
     console.error("[saveListmonkConfigAction] DB error", err);

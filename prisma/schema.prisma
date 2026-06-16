@@ -157,11 +157,30 @@ model FeatureFlag {
 
 // ── Listmonk Email Configuration ──
 model ListmonkConfig {
-  id        String   @id @default("default") // singleton — always "default"
-  userId    String
-  apiKey    String
-  updatedAt DateTime @updatedAt
-  updatedBy String?
+  id         String   @id @default("default")
+  baseUrl    String?  // e.g. http://13.229.69.87:9000/api
+  userId     String
+  apiKey     String
+  templateId Int?     // selected template ID from Listmonk
+  updatedAt  DateTime @updatedAt
+  updatedBy  String?
+}
+
+// ── Email Send Log ──
+model EmailLog {
+  id          String   @id @default(cuid())
+  taskId      String?
+  task        Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  recipient   String   // email address
+  subject     String
+  status      String   @default("pending") // pending | sent | failed
+  listmonkId  String?  // Listmonk subscriber/campaign ID for tracking
+  errorMsg    String?  // error details if failed
+  createdAt   DateTime @default(now())
+
+  @@index([taskId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 // ────────────────────────────────────────────────────────────
@@ -290,6 +309,7 @@ model Task {
   updatedAt       DateTime @updatedAt
 
   cboNotes       CboNote[]
+  emailLogs      EmailLog[]
   updates        TaskUpdate[]
 
   @@index([verticalId, status])
