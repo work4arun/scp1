@@ -160,7 +160,7 @@ build_and_start() {
   export DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1
 
   log "Building Docker images..."
-  docker compose build 2>&1 | tail -5
+  docker compose build
 
   log "Starting Postgres first..."
   docker compose up -d db
