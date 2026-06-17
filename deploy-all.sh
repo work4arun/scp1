@@ -124,7 +124,7 @@ build_and_start() {
   export DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1
 
   log "Building Docker images..."
-  docker compose build 2>&1 | tail -3
+  docker compose build
 
   # Start DB first, wait for healthy, create databases, THEN start others
   log "Starting Postgres first..."
