@@ -27,7 +27,7 @@ DB_USER="scp_user1"
 DB_PASS="scp_pass_db123"
 DB_NAME="scp_db"
 AUTH_SECRET="super-secret-key-change-in-production-2025"
-DOMAIN="rathinam.xyz"
+DOMAIN="rtc.systitsoft.in"
 # ─────────────────────────────────────────────────────────────────────────────
 
 PUBLIC_IP="${PUBLIC_IP:-}"
