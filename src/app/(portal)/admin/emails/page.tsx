@@ -9,8 +9,8 @@ export default async function AdminEmailsPage() {
   const session = await auth();
   if (!canConfigureSystem(session?.user.systemRole)) redirect("/");
 
-  // Use relative path to avoid mixed content warnings (page is served over HTTPS)
-  const listmonkUrl = "/listmonk/";
+  // Listmonk is on its own subdomain now — use the env var directly
+  const listmonkUrl = process.env.LISTMONK_URL || "https://listmonk.systitsoft.in";
   const config = await prisma.listmonkConfig.findUnique({ where: { id: "default" } });
 
   return (

@@ -1,8 +1,8 @@
-# Strategic Control Portal — production stack with SSL via Nginx
-#
+# Strategic Control Portal — production stack with SSL
 # Services: db (Postgres 16), app (Next.js), listmonk (email), nginx (SSL proxy)
-# Nginx handles ports 80/443 publically. App and Listmonk are internal-only.
-# Listmonk is also reachable at /listmonk/ via the Nginx proxy.
+# Nginx handles SSL termination for both domains:
+#   - rtc.systitsoft.in → app:3000
+#   - listmonk.systitsoft.in → listmonk:9000
 
 services:
   db:
@@ -42,7 +42,7 @@ services:
       NODE_ENV: production
       PORT: "3000"
       SCP_SEED: ${SCP_SEED:-0}
-      LISTMONK_URL: ${LISTMONK_URL:-http://listmonk:9000}
+      LISTMONK_URL: ${LISTMONK_URL:-https://listmonk.systitsoft.in}
       LISTMONK_API_USER: ${LISTMONK_API_USER:-admin}
       LISTMONK_API_PASSWORD: ${LISTMONK_API_PASSWORD:-listmonk}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -53,7 +53,7 @@ services:
       SMTP_FROM: ${SMTP_FROM:-}
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-}
     ports:
-      - "3000:3000"   # internal — nginx proxies to this
+      - "3000:3000"
     networks:
       - scp_net
 
@@ -62,7 +62,7 @@ services:
     container_name: scp-listmonk
     restart: unless-stopped
     ports:
-      - "9000:9000"   # internal — nginx proxies to this under /listmonk/
+      - "9000:9000"
     depends_on:
       db:
         condition: service_healthy
