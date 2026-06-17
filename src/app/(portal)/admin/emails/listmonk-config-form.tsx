@@ -1,16 +1,15 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Save, RefreshCw } from "lucide-react";
 import { saveListmonkConfigAction } from "@/app/(portal)/admin/teams/actions";
-import { fetchTemplates } from "@/lib/listmonk";
+import { fetchTemplatesAction } from "./actions";
 
 export function EmailsPageClient({
   listmonkUrl,
@@ -19,7 +18,7 @@ export function EmailsPageClient({
   listmonkUrl: string;
   savedConfig: { baseUrl: string; userId: string; apiKey: string; templateId: number | null } | null;
 }) {
-  const [tab, setTab] = useState<"embedded" | "config">("embedded");
+  const [tab, setTab] = useState<"embedded" | "config">("config");
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -32,12 +31,22 @@ export function EmailsPageClient({
   const [templateId, setTemplateId] = useState<number | null>(savedConfig?.templateId ?? null);
   const [templates, setTemplates] = useState<{ id: number; name: string }[]>([]);
   const [fetchingTemplates, setFetchingTemplates] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   async function loadTemplates() {
     if (!baseUrl || !userId || !apiKey) return;
     setFetchingTemplates(true);
-    const list = await fetchTemplates(baseUrl, userId, apiKey);
-    setTemplates(list);
+    setFetchError(null);
+    try {
+      const result = await fetchTemplatesAction(baseUrl, userId, apiKey);
+      if (result.error) {
+        setFetchError(result.error);
+      } else {
+        setTemplates(result.templates);
+      }
+    } catch {
+      setFetchError("Failed to fetch templates. Check URL and credentials.");
+    }
     setFetchingTemplates(false);
   }
 
@@ -147,8 +156,10 @@ export function EmailsPageClient({
                     {fetchingTemplates ? "Loading..." : "Fetch"}
                   </Button>
                 </div>
+                {fetchError && <p className="text-xs text-destructive">{fetchError}</p>}
+                {templates.length > 0 && <p className="text-xs text-success">✓ {templates.length} template(s) loaded.</p>}
                 <p className="text-[11px] text-muted-foreground">
-                  Click Fetch to load templates from Listmonk. The selected template will be used for task assignment emails.
+                  Click Fetch to load templates from Listmonk via server (avoids CORS). The selected template will be used for task assignment emails.
                 </p>
               </div>
 

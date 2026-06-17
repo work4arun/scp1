@@ -76,16 +76,19 @@ export async function sendTxEmail(
   }
 }
 
-/** Fetch templates from Listmonk */
+/** Fetch templates from Listmonk. Works in both browser and server. */
 export async function fetchTemplates(baseUrl: string, userId: string, apiKey: string) {
   try {
-    const auth = Buffer.from(`${userId}:${apiKey}`).toString("base64");
+    const auth = globalThis.btoa(`${userId}:${apiKey}`);
     const res = await fetch(`${baseUrl}/templates`, {
       headers: { Authorization: `Basic ${auth}` },
     });
     if (!res.ok) return [];
     const json = await res.json();
-    return (json?.data || []).map((t: any) => ({ id: t.id, name: t.name }));
+    const data = json?.data;
+    // API returns data as either an array or a single object wrapped in an array
+    const list = Array.isArray(data) ? data : data ? [data] : [];
+    return list.map((t: any) => ({ id: t.id, name: t.name }));
   } catch {
     return [];
   }
