@@ -12,20 +12,17 @@ import { updateTaskAction } from "./actions";
 import type { TaskSource, InterventionFlag, TaskStatus } from "@prisma/client";
 
 type Vertical  = { id: string; code: string; name: string };
-type SubVertical = { id: string; name: string; verticalId: string };
 type Priority  = { id: string; code: string; label: string };
 type Team = { id: string; name: string; members: { id: string; name: string; email: string; designation: string | null }[] };
 
 export function EditTaskForm({
   task,
   verticals,
-  subVerticals,
   priorities,
   teams,
 }: {
-  task: { id: string; code: string; title: string; verticalId: string; subVerticalId: string | null; priorityId: string; deadline: string; frequency: string; source: TaskSource; expectedOutput: string; supportNeeded: string; delayReason: string; nextAction: string; intervention: InterventionFlag; status: TaskStatus; teamIds: string[]; memberIds: string[] };
+  task: { id: string; code: string; title: string; verticalId: string; priorityId: string; deadline: string; frequency: string; source: TaskSource; expectedOutput: string; supportNeeded: string; delayReason: string; nextAction: string; intervention: InterventionFlag; status: TaskStatus; teamIds: string[]; memberIds: string[] };
   verticals: Vertical[];
-  subVerticals: SubVertical[];
   priorities: Priority[];
   teams: Team[];
 }) {
@@ -55,7 +52,6 @@ export function EditTaskForm({
   const [memberSearch, setMemberSearch] = useState("");
   const [memberDropdownOpen, setMemberDropdownOpen] = useState(false);
 
-  const filteredSubs = useMemo(() => subVerticals.filter((s) => s.verticalId === verticalId), [subVerticals, verticalId]);
   const allMembers = useMemo(() => teams.flatMap((t) => t.members.map((m) => ({ ...m, teamName: t.name }))), [teams]);
 
   const filteredTeams = useMemo(() => {
@@ -100,7 +96,6 @@ export function EditTaskForm({
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Vertical" htmlFor="verticalId"><Select id="verticalId" name="verticalId" required value={verticalId} onChange={(e) => setVerticalId(e.target.value)}>{verticals.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</Select></Field>
-        <Field label="Sub-vertical" htmlFor="subVerticalId"><Select id="subVerticalId" name="subVerticalId" defaultValue={task.subVerticalId || ""}><option value="">— None —</option>{filteredSubs.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></Field>
       </div>
       <Field label="Task title" htmlFor="title"><Input id="title" name="title" required defaultValue={task.title} /></Field>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
