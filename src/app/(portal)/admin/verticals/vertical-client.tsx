@@ -17,8 +17,7 @@ export function VerticalForm({ initial }: { initial?: { id?: string; code?: stri
   const [error, setError] = useState<string | null>(null);
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setError(null);
+    e.preventDefault(); setError(null);
     const formEl = e.currentTarget;
     const form = new FormData(formEl);
     startTransition(async () => {
@@ -32,34 +31,13 @@ export function VerticalForm({ initial }: { initial?: { id?: string; code?: stri
   return (
     <form onSubmit={onSubmit} className="grid grid-cols-1 gap-3 sm:grid-cols-6">
       {initial?.id ? <input type="hidden" name="id" value={initial.id} /> : null}
-      <div className="space-y-1.5 sm:col-span-1">
-        <Label htmlFor="code">Code</Label>
-        <Input id="code" name="code" required maxLength={6} placeholder="MKT" defaultValue={initial?.code} className="uppercase" />
-      </div>
-      <div className="space-y-1.5 sm:col-span-2">
-        <Label htmlFor="name">Name</Label>
-        <Input id="name" name="name" required placeholder="Marketing" defaultValue={initial?.name} />
-      </div>
-      <div className="space-y-1.5 sm:col-span-1">
-        <Label htmlFor="colorHex">Colour</Label>
-        <Input id="colorHex" name="colorHex" type="color" defaultValue={initial?.colorHex || "#4f46e5"} className="h-11 p-1" />
-      </div>
-      <div className="space-y-1.5 sm:col-span-1">
-        <Label htmlFor="sortOrder">Order</Label>
-        <Input id="sortOrder" name="sortOrder" type="number" defaultValue={initial?.sortOrder ?? 0} />
-      </div>
-      <div className="space-y-1.5 sm:col-span-6">
-        <Label htmlFor="description">Description</Label>
-        <Input id="description" name="description" placeholder="Short purpose" defaultValue={initial?.description || ""} />
-      </div>
-      {error && (
-        <div className="sm:col-span-6 rounded-md border border-destructive/40 bg-destructive/5 p-2.5 text-xs text-destructive">
-          {error}
-        </div>
-      )}
-      <div className="sm:col-span-6 flex justify-end">
-        <Button type="submit" disabled={pending}>{pending ? "Saving…" : initial?.id ? "Update vertical" : "Add vertical"}</Button>
-      </div>
+      <div className="space-y-1.5 sm:col-span-1"><Label htmlFor="code">Code</Label><Input id="code" name="code" required maxLength={6} placeholder="MKT" defaultValue={initial?.code} className="uppercase" /></div>
+      <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="name">Name</Label><Input id="name" name="name" required placeholder="Marketing" defaultValue={initial?.name} /></div>
+      <div className="space-y-1.5 sm:col-span-1"><Label htmlFor="colorHex">Colour</Label><Input id="colorHex" name="colorHex" type="color" defaultValue={initial?.colorHex || "#4f46e5"} className="h-11 p-1" /></div>
+      <div className="space-y-1.5 sm:col-span-1"><Label htmlFor="sortOrder">Order</Label><Input id="sortOrder" name="sortOrder" type="number" defaultValue={initial?.sortOrder ?? 0} /></div>
+      <div className="space-y-1.5 sm:col-span-6"><Label htmlFor="description">Description</Label><Input id="description" name="description" placeholder="Short purpose" defaultValue={initial?.description || ""} /></div>
+      {error && (<div className="sm:col-span-6 rounded-md border border-destructive/40 bg-destructive/5 p-2.5 text-xs text-destructive">{error}</div>)}
+      <div className="sm:col-span-6 flex justify-end"><Button type="submit" disabled={pending}>{pending ? "Saving…" : initial?.id ? "Update vertical" : "Add vertical"}</Button></div>
     </form>
   );
 }
@@ -67,7 +45,7 @@ export function VerticalForm({ initial }: { initial?: { id?: string; code?: stri
 export function VerticalRow({
   v,
 }: {
-  v: { id: string; code: string; name: string; description: string | null; colorHex: string; sortOrder: number; active: boolean; taskCount: number; subCount: number };
+  v: { id: string; code: string; name: string; description: string | null; colorHex: string; sortOrder: number; active: boolean; taskCount: number };
 }) {
   const [editing, setEditing] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -77,10 +55,7 @@ export function VerticalRow({
   if (editing) {
     return (
       <div className="rounded-lg border border-primary/40 bg-accent/40 p-3">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="text-xs font-semibold uppercase text-muted-foreground">Edit vertical</div>
-          <button onClick={() => setEditing(false)} className="rounded-md p-1 hover:bg-card"><X className="h-4 w-4" /></button>
-        </div>
+        <div className="mb-3 flex items-center justify-between"><div className="text-xs font-semibold uppercase text-muted-foreground">Edit vertical</div><button onClick={() => setEditing(false)} className="rounded-md p-1 hover:bg-card"><X className="h-4 w-4" /></button></div>
         <VerticalForm initial={v} />
       </div>
     );
@@ -93,60 +68,23 @@ export function VerticalRow({
         <div className="min-w-0">
           <div className="text-sm font-semibold">{v.name}</div>
           <div className="text-xs text-muted-foreground truncate">{v.description || "—"}</div>
-          <div className="text-xs text-muted-foreground">{v.taskCount} tasks · {v.subCount} sub-verticals</div>
+          <div className="text-xs text-muted-foreground">{v.taskCount} tasks</div>
         </div>
       </div>
       <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
         <Badge variant={v.active ? "success" : "muted"}>{v.active ? "Active" : "Hidden"}</Badge>
-        <Button variant="ghost" size="sm" disabled={pending}
-          onClick={() => startTransition(async () => {
-            const r = await moveVerticalAction(v.id, "up");
-            if (!r.success) { alert(r.error); return; }
-            router.refresh();
-          })}
-          title="Move up"
-        ><ArrowUp className="h-4 w-4" /></Button>
-        <Button variant="ghost" size="sm" disabled={pending}
-          onClick={() => startTransition(async () => {
-            const r = await moveVerticalAction(v.id, "down");
-            if (!r.success) { alert(r.error); return; }
-            router.refresh();
-          })}
-          title="Move down"
-        ><ArrowDown className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="sm" disabled={pending} title="Move up" onClick={() => startTransition(async () => { const r = await moveVerticalAction(v.id, "up"); if (!r.success) { alert(r.error); return; } router.refresh(); })}><ArrowUp className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="sm" disabled={pending} title="Move down" onClick={() => startTransition(async () => { const r = await moveVerticalAction(v.id, "down"); if (!r.success) { alert(r.error); return; } router.refresh(); })}><ArrowDown className="h-4 w-4" /></Button>
         <Button variant="ghost" size="sm" onClick={() => setEditing(true)} title="Edit"><Edit2 className="h-4 w-4" /></Button>
-        <Button variant="ghost" size="sm" disabled={pending} title="Toggle active"
-          onClick={() => startTransition(async () => {
-            const r = await toggleVerticalActiveAction(v.id);
-            if (!r.success) { alert(r.error); return; }
-            router.refresh();
-          })}
-        >
-          <Save className="h-4 w-4" />
-        </Button>
-        <Button variant="ghost" size="sm" disabled={pending} title="Delete"
-          onClick={() => setDeleteOpen(true)}
-        >
-          <Trash2 className="h-4 w-4 text-destructive" />
-        </Button>
+        <Button variant="ghost" size="sm" disabled={pending} title="Toggle active" onClick={() => startTransition(async () => { const r = await toggleVerticalActiveAction(v.id); if (!r.success) { alert(r.error); return; } router.refresh(); })}><Save className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="sm" disabled={pending} title="Delete" onClick={() => setDeleteOpen(true)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
         <DeleteConfirmDialog
           open={deleteOpen}
           itemName={v.name}
           itemType="vertical"
-          itemDesc={
-            v.taskCount > 0 || v.subCount > 0
-              ? `This vertical has ${v.taskCount} task(s) and ${v.subCount} sub-vertical(s). Deleting it will permanently remove all associated tasks and sub-verticals.`
-              : undefined
-          }
+          itemDesc={v.taskCount > 0 ? `This vertical has ${v.taskCount} task(s). Deleting it will permanently remove all associated tasks.` : undefined}
           onCancel={() => setDeleteOpen(false)}
-          onConfirm={() => {
-            setDeleteOpen(false);
-            startTransition(async () => {
-              const r = await deleteVerticalAction(v.id);
-              if (!r.success) { alert(r.error); return; }
-              router.refresh();
-            });
-          }}
+          onConfirm={() => { setDeleteOpen(false); startTransition(async () => { const r = await deleteVerticalAction(v.id); if (!r.success) { alert(r.error); return; } router.refresh(); }); }}
         />
       </div>
     </div>

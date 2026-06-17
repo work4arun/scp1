@@ -32,7 +32,6 @@ type NavSection = { label: string; items: NavItem[]; collapsible?: boolean };
 const ADMIN_NAV_ITEMS: NavItem[] = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard },
   { href: "/admin/verticals", label: "Verticals", icon: Layers },
-  { href: "/admin/sub-verticals", label: "Sub-Verticals", icon: Layers },
   { href: "/admin/priorities", label: "Priorities", icon: Tags },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/tasks", label: "All Tasks", icon: ListChecks },

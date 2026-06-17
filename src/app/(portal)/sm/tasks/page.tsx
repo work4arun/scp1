@@ -20,20 +20,19 @@ export default async function TasksPage({ searchParams }: { searchParams: TaskFi
   const filterWhere = buildTaskWhere(searchParams);
   const where = { AND: [{ status: { not: "DROPPED" } as const }, filterWhere] };
 
-  const [tasks, verticals, subVerticals, priorities, teams] = await Promise.all([
-    prisma.task.findMany({ where, orderBy: [{ priority: { rank: "asc" } }, { updatedAt: "desc" }], include: { vertical: true, subVertical: true, priority: true, teamAssignments: { include: { team: true } }, assignees: { include: { member: true } }, cboNotes: { orderBy: { createdAt: "desc" }, include: { author: { select: { name: true } } } } } }),
+  const [tasks, verticals, priorities, teams] = await Promise.all([
+    prisma.task.findMany({ where, orderBy: [{ priority: { rank: "asc" } }, { updatedAt: "desc" }], include: { vertical: true, priority: true, teamAssignments: { include: { team: true } }, assignees: { include: { member: true } }, cboNotes: { orderBy: { createdAt: "desc" }, include: { author: { select: { name: true } } } } } }),
     prisma.vertical.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
-    prisma.subVertical.findMany({ where: { active: true }, orderBy: [{ vertical: { sortOrder: "asc" } }, { sortOrder: "asc" }], include: { vertical: { select: { code: true } } } }),
     prisma.priority.findMany({ where: { active: true }, orderBy: { rank: "asc" } }),
     prisma.team.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
   ]);
 
-  const rows = tasks.map((t) => ({ id: t.id, code: t.code, title: t.title, verticalName: t.vertical.name, verticalCode: t.vertical.code, subVerticalName: t.subVertical?.name || "—", priorityLabel: t.priority.label, priorityCode: t.priority.code, status: t.status, assigneeNames: t.teamAssignments.length > 0 ? t.teamAssignments.map((ta) => `[${ta.team.name}]`).join(", ") : t.assignees.map((a) => a.member.name).join(", ") || "—", updatedAt: t.updatedAt, lastUpdateAt: t.lastUpdateAt }));
+  const rows = tasks.map((t) => ({ id: t.id, code: t.code, title: t.title, verticalName: t.vertical.name, verticalCode: t.vertical.code, priorityLabel: t.priority.label, priorityCode: t.priority.code, status: t.status, assigneeNames: t.teamAssignments.length > 0 ? t.teamAssignments.map((ta) => `[${ta.team.name}]`).join(", ") : t.assignees.map((a) => a.member.name).join(", ") || "—", updatedAt: t.updatedAt, lastUpdateAt: t.lastUpdateAt }));
 
   return (
     <div className="space-y-6 animate-fade-in">
       <PageHeader title="Tasks" description="All active tasks across verticals." action={<Button asChild size="lg"><Link href="/sm/new-task"><Plus className="h-4 w-4" /> New task</Link></Button>} />
-      <TaskFilterBar active={searchParams as Record<string, string | undefined>} basePath="/sm/tasks" options={{ verticals: verticals.map((v) => ({ id: v.id, code: v.code, name: v.name })), subVerticals: subVerticals.map((s) => ({ id: s.id, name: s.name, verticalCode: s.vertical.code })), priorities: priorities.map((p) => ({ id: p.id, code: p.code, label: p.label })), teams: teams.map((t) => ({ id: t.id, name: t.name })) }} />
+      <TaskFilterBar active={searchParams as Record<string, string | undefined>} basePath="/sm/tasks" options={{ verticals: verticals.map((v) => ({ id: v.id, code: v.code, name: v.name })), priorities: priorities.map((p) => ({ id: p.id, code: p.code, label: p.label })), teams: teams.map((t) => ({ id: t.id, name: t.name })) }} />
       <Card><CardHeader><CardTitle>{rows.length} task{rows.length !== 1 ? "s" : ""}</CardTitle></CardHeader><CardContent className="space-y-2">
         {rows.length === 0 ? <div className="text-sm text-muted-foreground py-6 text-center">No tasks found.</div> : rows.map((r) => {
           const task = tasks.find((t) => t.id === r.id);

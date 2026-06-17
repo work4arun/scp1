@@ -22,7 +22,6 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
   }
 
   const verticalId   = String(formData.get("verticalId") || "").trim();
-  const subVerticalId = (formData.get("subVerticalId") as string) || null;
   const priorityId   = String(formData.get("priorityId") || "").trim();
   const title        = String(formData.get("title") || "").trim();
   const deadlineStr  = (formData.get("deadline") as string) || "";
@@ -33,7 +32,6 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
   const nextAction     = (formData.get("nextAction") as string) || null;
   const intervention   = ((formData.get("intervention") as string) || "NO") as InterventionFlag;
 
-  // Multi-team IDs (comma-separated)
   const teamIdsRaw = (formData.get("teamIds") as string) || "";
   const teamIds = teamIdsRaw ? teamIdsRaw.split(",").map((id) => id.trim()).filter(Boolean) : [];
   const teamSendEmailMap = new Map<string, boolean>();
@@ -42,7 +40,6 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
     teamSendEmailMap.set(tid, sendVal !== "false");
   }
 
-  // Individual member IDs (comma-separated)
   const memberIdsRaw = (formData.get("memberIds") as string) || "";
   const memberIds = memberIdsRaw ? memberIdsRaw.split(",").map((id) => id.trim()).filter(Boolean) : [];
   const memberSendEmailMap = new Map<string, boolean>();
@@ -73,19 +70,10 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
         const code = await computeNextTaskCode(tx, verticalId, vertical.code);
         const task = await tx.task.create({
           data: {
-            code,
-            title,
-            verticalId,
-            subVerticalId: subVerticalId || null,
-            priorityId,
+            code, title, verticalId, priorityId,
             createdById: session.user.id,
             deadline: deadlineStr ? new Date(deadlineStr) : null,
-            frequency,
-            source,
-            expectedOutput,
-            supportNeeded,
-            nextAction,
-            intervention,
+            frequency, source, expectedOutput, supportNeeded, nextAction, intervention,
             lastUpdateAt: new Date(),
           },
         });
@@ -102,8 +90,7 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
         }
         return task;
       }, { maxWait: 30_000, timeout: 30_000 });
-      lastErr = null;
-      break;
+      lastErr = null; break;
     } catch (err: unknown) {
       lastErr = err;
       if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "P2002") continue;
@@ -118,15 +105,13 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
 
   revalidatePath("/sm"); revalidatePath("/sm/tasks"); revalidatePath("/cbo");
 
-  // ── Send emails via Listmonk ──────────────────────────────────────────
   const lmConfig = await getListmonkConfig();
   if (lmConfig) {
     const recipients: { email: string; name: string }[] = [];
 
     if (teamIds.length > 0) {
       const teamMembers = await prisma.teamMember.findMany({
-        where: { teamId: { in: teamIds }, active: true },
-        select: { name: true, email: true },
+        where: { teamId: { in: teamIds }, active: true }, select: { name: true, email: true },
       });
       for (const m of teamMembers) {
         const shouldSend = teamIds.some((tid) => teamSendEmailMap.get(tid) !== false);
@@ -136,8 +121,7 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
 
     if (memberIds.length > 0) {
       const members = await prisma.teamMember.findMany({
-        where: { id: { in: memberIds }, active: true },
-        select: { id: true, name: true, email: true },
+        where: { id: { in: memberIds }, active: true }, select: { id: true, name: true, email: true },
       });
       for (const m of members) {
         if (memberSendEmailMap.get(m.id) !== false) recipients.push({ email: m.email, name: m.name });
@@ -146,23 +130,17 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
 
     const sent = new Set<string>();
     for (const r of recipients) {
-      if (sent.has(r.email)) continue;
-      sent.add(r.email);
-
+      if (sent.has(r.email)) continue; sent.add(r.email);
       const log = await prisma.emailLog.create({
         data: { taskId: created.id, recipient: r.email, subject: `[SCP] New Task: ${created.code}`, status: "pending" },
       });
-
       const result = await sendTxEmail(lmConfig, {
-        subscriberEmail: r.email,
-        subscriberName: r.name,
-        taskTitle: created.title,
-        priority: priorityCode,
+        subscriberEmail: r.email, subscriberName: r.name,
+        taskTitle: created.title, priority: priorityCode,
         deadline: deadlineStr || undefined,
         expectedOutput: expectedOutput || undefined,
         drBnIntervention: intervention !== "NO",
       });
-
       await prisma.emailLog.update({
         where: { id: log.id },
         data: { status: result.success ? "sent" : "failed", errorMsg: result.error || null },

@@ -206,7 +206,7 @@ summary() {
   log ""; log "═══ Deployment Complete ═══"
   log "  App:        ${url}"
   log "  Listmonk:   ${url}/listmonk/"
-  log "  Logins (seed): superadmin@scp.cloud / cbo@rtc.cloud / sm@scp.cloud (pw: admin123)"
+  log "  Logins (seed): superadmin@scp.local / cbo@scp.local / sm@scp.local (pw: admin123)"
   log "  Logs:       docker compose logs -f app"
   log "  Stop:       docker compose stop"
   log "  Reset:      docker compose down -v && git pull && ./deploy-all.sh"

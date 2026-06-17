@@ -14,10 +14,9 @@ export default async function CboParkedPage() {
   if (!isCBO(session?.user.systemRole) || !session?.user.id) redirect("/");
 
   const tasks = await prisma.task.findMany({
-    where: { status: "PARKED" },
-    orderBy: { updatedAt: "desc" },
+    where: { status: "PARKED" }, orderBy: { updatedAt: "desc" },
     include: {
-      vertical: true, subVertical: true, priority: true,
+      vertical: true, priority: true,
       teamAssignments: { include: { team: true } },
       assignees: { include: { member: true } },
       cboNotes: { orderBy: { createdAt: "desc" }, include: { author: { select: { name: true } } } },
@@ -28,7 +27,7 @@ export default async function CboParkedPage() {
     <div className="space-y-6 animate-fade-in">
       <PageHeader title="Parking Lot" description="Tasks that have been parked for later review." />
       <Card><CardHeader><CardTitle>{tasks.length} parked task{tasks.length !== 1 ? "s" : ""}</CardTitle></CardHeader><CardContent className="space-y-2">
-        {tasks.length === 0 ? <div className="text-sm text-muted-foreground py-4 text-center">No parked tasks. 🎯</div> : tasks.map((t) => {
+        {tasks.length === 0 ? <div className="text-sm text-muted-foreground py-4 text-center">No parked tasks.</div> : tasks.map((t) => {
           const assigneeNames = t.teamAssignments.length > 0 ? t.teamAssignments.map((ta) => `[${ta.team.name}]`).join(", ") : t.assignees.map((a) => a.member.name).join(", ") || "—";
           return (
             <div key={t.id} className="flex flex-col gap-2 rounded-lg border border-border p-3 sm:flex-row sm:items-center sm:justify-between">

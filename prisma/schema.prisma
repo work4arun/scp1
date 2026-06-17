@@ -10,10 +10,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ────────────────────────────────────────────────────────────
-// Roles & Users
-// ────────────────────────────────────────────────────────────
-
 enum SystemRole {
   SUPER_ADMIN
   CBO
@@ -39,10 +35,6 @@ model User {
 
   @@index([systemRole])
 }
-
-// ────────────────────────────────────────────────────────────
-// Teams & Members
-// ────────────────────────────────────────────────────────────
 
 model Team {
   id          String   @id @default(cuid())
@@ -76,14 +68,13 @@ model TeamMember {
   @@index([email])
 }
 
-// Junction: team assigned to a task (with email toggle)
 model TaskTeamAssignment {
   id        String   @id @default(cuid())
   taskId    String
   task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
   teamId    String
   team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  sendEmail Boolean  @default(true) // default: send email to all team members
+  sendEmail Boolean  @default(true)
   assignedAt DateTime @default(now())
 
   @@unique([taskId, teamId])
@@ -91,14 +82,13 @@ model TaskTeamAssignment {
   @@index([teamId])
 }
 
-// Junction: individual member assignment to a task (with email toggle)
 model TaskAssignment {
   id        String     @id @default(cuid())
   taskId    String
   task      Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
   memberId  String
   member    TeamMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  sendEmail Boolean    @default(true) // default: send email to this member
+  sendEmail Boolean    @default(true)
   assignedAt DateTime   @default(now())
 
   @@unique([taskId, memberId])
@@ -106,14 +96,12 @@ model TaskAssignment {
   @@index([memberId])
 }
 
-
-// CBO can pin tasks/verticals to keep them visible across sessions.
 model Pin {
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  kind      String   // "task" | "vertical"
-  refId     String   // id of the referenced entity
+  kind      String
+  refId     String
   note      String?
   createdAt DateTime @default(now())
 
@@ -121,7 +109,6 @@ model Pin {
   @@index([userId])
 }
 
-// Light global audit log
 model AuditLog {
   id        String   @id @default(cuid())
   userId    String?
@@ -142,7 +129,6 @@ model AuditLog {
   @@index([action])
 }
 
-// Feature Flags
 model FeatureFlag {
   key         String   @id
   enabled     Boolean  @default(false)
@@ -155,37 +141,31 @@ model FeatureFlag {
   @@index([category])
 }
 
-// ── Listmonk Email Configuration ──
 model ListmonkConfig {
   id         String   @id @default("default")
-  baseUrl    String?  // e.g. http://13.229.69.87:9000/api
+  baseUrl    String?
   userId     String
   apiKey     String
-  templateId Int?     // selected template ID from Listmonk
+  templateId Int?
   updatedAt  DateTime @updatedAt
   updatedBy  String?
 }
 
-// ── Email Send Log ──
 model EmailLog {
   id          String   @id @default(cuid())
   taskId      String?
   task        Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
-  recipient   String   // email address
+  recipient   String
   subject     String
-  status      String   @default("pending") // pending | sent | failed
-  listmonkId  String?  // Listmonk subscriber/campaign ID for tracking
-  errorMsg    String?  // error details if failed
+  status      String   @default("pending")
+  listmonkId  String?
+  errorMsg    String?
   createdAt   DateTime @default(now())
 
   @@index([taskId])
   @@index([status])
   @@index([createdAt])
 }
-
-// ────────────────────────────────────────────────────────────
-// Verticals & Sub-Verticals
-// ────────────────────────────────────────────────────────────
 
 model Vertical {
   id          String  @id @default(cuid())
@@ -198,29 +178,8 @@ model Vertical {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  subVerticals SubVertical[]
   tasks        Task[]
 }
-
-model SubVertical {
-  id          String  @id @default(cuid())
-  name        String
-  description String?
-  verticalId  String
-  vertical    Vertical @relation(fields: [verticalId], references: [id], onDelete: Cascade)
-  sortOrder   Int     @default(0)
-  active      Boolean @default(true)
-  createdAt   DateTime @default(now())
-
-  tasks Task[]
-
-  @@unique([verticalId, name])
-  @@index([verticalId])
-}
-
-// ────────────────────────────────────────────────────────────
-// Priority
-// ────────────────────────────────────────────────────────────
 
 model Priority {
   id            String  @id @default(cuid())
@@ -234,10 +193,6 @@ model Priority {
 
   tasks Task[]
 }
-
-// ────────────────────────────────────────────────────────────
-// Status & Source enums
-// ────────────────────────────────────────────────────────────
 
 enum TaskStatus {
   NOT_STARTED
@@ -270,10 +225,6 @@ enum InterventionFlag {
   ONLY_IF_DELAYED
 }
 
-// ────────────────────────────────────────────────────────────
-// Tasks
-// ────────────────────────────────────────────────────────────
-
 model Task {
   id              String   @id @default(cuid())
   code            String   @unique
@@ -281,15 +232,11 @@ model Task {
   description     String?
   verticalId      String
   vertical        Vertical @relation(fields: [verticalId], references: [id])
-  subVerticalId   String?
-  subVertical     SubVertical? @relation(fields: [subVerticalId], references: [id])
   priorityId      String
   priority        Priority @relation(fields: [priorityId], references: [id])
   status          TaskStatus @default(NOT_STARTED)
   source          TaskSource @default(SELF_STRATEGY)
-  // Multi-team assignment
   teamAssignments TaskTeamAssignment[]
-  // Individual member assignments
   assignees       TaskAssignment[]
   createdById     String
   createdBy       User     @relation("TaskCreator", fields: [createdById], references: [id])
@@ -317,14 +264,13 @@ model Task {
   @@index([droppedAt])
 }
 
-// CBO notes (voice + text)
 model CboNote {
   id           String   @id @default(cuid())
   taskId       String
   task         Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
   authorId     String
   author       User     @relation(fields: [authorId], references: [id])
-  kind         String   // "text" | "voice"
+  kind         String
   text         String?
   audioBytes   Bytes?
   audioMime    String?

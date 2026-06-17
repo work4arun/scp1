@@ -10,44 +10,22 @@ export default async function NewTaskPage() {
   const session = await auth();
   if (!canManageTasks(session?.user.systemRole)) redirect("/");
 
-  const [verticals, subVerticals, priorities, teams] = await Promise.all([
+  const [verticals, priorities, teams] = await Promise.all([
     prisma.vertical.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
-    prisma.subVertical.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
     prisma.priority.findMany({ where: { active: true }, orderBy: { rank: "asc" } }),
-    prisma.team.findMany({
-      where: { active: true },
-      orderBy: { name: "asc" },
-      include: {
-        members: {
-          where: { active: true },
-          orderBy: { sortOrder: "asc" },
-        },
-      },
-    }),
+    prisma.team.findMany({ where: { active: true }, orderBy: { name: "asc" }, include: { members: { where: { active: true }, orderBy: { sortOrder: "asc" } } } }),
   ]);
 
   return (
     <div className="space-y-6 animate-fade-in">
       <PageHeader title="New Task" description="Capture an instruction or new activity into the register." />
-      <Card>
-        <CardContent className="p-5">
-          <NewTaskForm
-            verticals={verticals.map((v) => ({ id: v.id, code: v.code, name: v.name }))}
-            subVerticals={subVerticals.map((s) => ({ id: s.id, name: s.name, verticalId: s.verticalId }))}
-            priorities={priorities.map((p) => ({ id: p.id, code: p.code, label: p.label }))}
-            teams={teams.map((t) => ({
-              id: t.id,
-              name: t.name,
-              members: t.members.map((m) => ({
-                id: m.id,
-                name: m.name,
-                email: m.email,
-                designation: m.designation,
-              })),
-            }))}
-          />
-        </CardContent>
-      </Card>
+      <Card><CardContent className="p-5">
+        <NewTaskForm
+          verticals={verticals.map((v) => ({ id: v.id, code: v.code, name: v.name }))}
+          priorities={priorities.map((p) => ({ id: p.id, code: p.code, label: p.label }))}
+          teams={teams.map((t) => ({ id: t.id, name: t.name, members: t.members.map((m) => ({ id: m.id, name: m.name, email: m.email, designation: m.designation })) }))}
+        />
+      </CardContent></Card>
     </div>
   );
 }
