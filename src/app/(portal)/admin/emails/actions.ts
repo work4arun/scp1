@@ -32,10 +32,8 @@ export async function fetchTemplatesAction(baseUrl: string, userId: string, apiK
     const data = json?.data;
     const list = Array.isArray(data) ? data : data ? [data] : [];
 
-    // Filter: only show TX templates that have a body set
-    const templates = list
-      .filter((t: any) => t.type === "tx" && t.body)
-      .map((t: any) => ({ id: t.id, name: t.name || `Template #${t.id}` }));
+    // Show all templates, not just TX type
+    const templates = list.map((t: any) => ({ id: t.id, name: t.name || `Template #${t.id}` }));
 
     return { templates };
   } catch (err: any) {
