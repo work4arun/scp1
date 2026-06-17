@@ -11,9 +11,14 @@ export async function fetchTemplatesAction(baseUrl: string, userId: string, apiK
     return { error: FORBIDDEN_MSG, templates: [] };
   }
 
+  // Resolve internal Docker hostname (from inside container, public IP may not be reachable)
+  const apiUrl = baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1")
+    ? baseUrl
+    : "http://listmonk:9000/api";
+
   try {
     const authHeader = Buffer.from(`${userId}:${apiKey}`).toString("base64");
-    const res = await fetch(`${baseUrl}/templates`, {
+    const res = await fetch(`${apiUrl}/templates`, {
       headers: { Authorization: `Basic ${authHeader}` },
       cache: "no-store",
     });
