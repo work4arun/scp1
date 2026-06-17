@@ -12,12 +12,10 @@ export interface LmConfig {
   templateId: number | null;
 }
 
-function resolveApiUrl(config: LmConfig): string {
-  // When running inside Docker, use internal hostname instead of public IP
-  const url = config.baseUrl;
-  if (url.includes("localhost") || url.includes("127.0.0.1")) return url;
-  // Replace public IP/domain with Docker internal hostname
-  return "http://listmonk:9000/api";
+function resolveApiUrl(_config: LmConfig): string {
+  // Always use Docker-internal hostname from inside the app container.
+  // Avoids DNS resolution issues and SSL problems with public domains.
+  return "http://listmonk:9000";
 }
 
 function getAuthHeader(config: LmConfig): string {
@@ -59,8 +57,7 @@ export async function sendTxEmail(
       data: txData,
     };
 
-    const apiUrl = resolveApiUrl(config);
-    const res = await fetch(`${apiUrl}/tx`, {
+    const res = await fetch(`${resolveApiUrl(config)}/api/tx`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
