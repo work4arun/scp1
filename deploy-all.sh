@@ -90,6 +90,8 @@ obtain_cert() {
   fi
 
   log "Obtaining SSL certificate for ${domain}..."
+  # Always run certbot, but use --dry-run first to test existing cert.
+  # If cert exists, certbot reports "not due for renewal" which is OK.
 
   # Stop containers so port 80 is free for standalone verification
   docker compose down 2>/dev/null || true
@@ -123,15 +125,15 @@ setup_env() {
   cd "${SCRIPT_DIR}"
   chmod +x docker/entrypoint.sh 2>/dev/null || true
 
-  local cert_exists=false
-  [ -f "/etc/letsencrypt/live/${APP_DOMAIN}/fullchain.pem" ] && cert_exists=true
+  # Detect certs
+  local app_cert_exists=false lm_cert_exists=false
+  [ -f "/etc/letsencrypt/live/${APP_DOMAIN}/fullchain.pem" ] && app_cert_exists=true
+  [ -f "/etc/letsencrypt/live/${LISTMONK_DOMAIN}/fullchain.pem" ] && lm_cert_exists=true
 
-  local base_url="http://${APP_DOMAIN}"
-  local lm_url="http://${LISTMONK_DOMAIN}"
-  if [ "$cert_exists" = true ]; then
-    base_url="https://${APP_DOMAIN}"
-    lm_url="https://${LISTMONK_DOMAIN}"
-  fi
+  local base_url="https://${APP_DOMAIN}"  # certbot ran previously, assume HTTPS
+  local lm_url="https://${LISTMONK_DOMAIN}"
+  if [ "$app_cert_exists" = false ]; then base_url="http://${APP_DOMAIN}"; fi
+  if [ "$lm_cert_exists" = false ]; then lm_url="http://${LISTMONK_DOMAIN}"; fi
 
   log "Writing .env..."
   log "  App URL: ${base_url}"
@@ -213,7 +215,7 @@ health_check() {
   log "Waiting up to ${HEALTH_TIMEOUT_S}s for app..."
   local deadline=$(( $(date +%s) + HEALTH_TIMEOUT_S )) ok=0
   while [ "$(date +%s)" -lt "$deadline" ]; do
-    if status=$(curl -fsS -o /dev/null -w '%{http_code}' --max-time 5 "http://localhost/api/health" 2>/dev/null) && [ "$status" = "200" ]; then ok=1; break; fi
+    if status=$(curl -fsS -L -o /dev/null -w '%{http_code}' --max-time 5 "http://localhost:3000/api/health" 2>/dev/null) && [ "$status" = "200" ]; then ok=1; break; fi
     sleep 5
     log "Waiting (HTTP: ${status:-unreachable})..."
   done
