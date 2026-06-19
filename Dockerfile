@@ -9,7 +9,7 @@ RUN apk add --no-cache openssl
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
 RUN --mount=type=cache,target=/root/.bun/install/cache \
-    rm -f bun.lockb && bun install --production --ignore-scripts && bun prisma generate
+    CI= bun install --production --ignore-scripts && bun prisma generate
 
 FROM oven/bun:1-alpine AS builder
 WORKDIR /app
