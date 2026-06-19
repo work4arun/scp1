@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { AlertTriangle, Save } from "lucide-react";
 import { saveSmtpConfigAction } from "@/app/(portal)/admin/teams/actions";
 
@@ -90,11 +89,13 @@ export function SmtpConfigForm({
           </div>
 
           <div className="flex items-center gap-3">
-            <Switch
+            <input
               id="secure"
               name="secure"
+              type="checkbox"
               checked={secure}
-              onCheckedChange={setSecure}
+              onChange={(e) => setSecure(e.target.checked)}
+              className="h-4 w-4 rounded border-border accent-primary"
             />
             <Label htmlFor="secure" className="cursor-pointer text-xs">
               Use SSL/TLS (port 465). Leave off for STARTTLS (port 587).
