@@ -1,24 +1,35 @@
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { isCBO } from "@/lib/rbac";
 import { PageHeader } from "@/components/page-header";
+import { PriorityBadge, StatusBadge } from "@/components/status-badges";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { StatusBadge, PriorityBadge } from "@/components/status-badges";
-import { Badge } from "@/components/ui/badge";
-import { formatRelative, formatDate } from "@/lib/utils";
 import { TaskFilterBar } from "../task-filter-bar";
+import { ConversationButton } from "@/components/conversation-button";
 import { buildTaskWhere, type TaskFilterParams } from "../task-filter-utils";
+import { formatRelative, formatDate } from "@/lib/utils";
+import Link from "next/link";
 
 export default async function CboAllTasks({ searchParams }: { searchParams: TaskFilterParams }) {
   const session = await auth();
-  if (!isCBO(session?.user.systemRole) || !session?.user.id) redirect("/");
+  if (session?.user.systemRole !== "CBO" && session?.user.systemRole !== "SUPER_ADMIN") redirect("/");
 
   const filterWhere = buildTaskWhere(searchParams);
   const where = { AND: [{ status: { not: "DROPPED" } as const }, filterWhere] };
 
   const [allTasks, verticals, priorities, teams] = await Promise.all([
-    prisma.task.findMany({ where, orderBy: [{ priority: { rank: "asc" } }, { createdAt: "asc" }], include: { vertical: true, priority: true, teamAssignments: { include: { team: true } }, assignees: { include: { member: true } }, updates: { orderBy: { createdAt: "desc" }, take: 1 } } }),
+    prisma.task.findMany({
+      where,
+      orderBy: [{ priority: { rank: "asc" } }, { createdAt: "asc" }],
+      include: {
+        vertical: true, priority: true,
+        teamAssignments: { include: { team: true } },
+        assignees: { include: { member: true } },
+        updates: { orderBy: { createdAt: "desc" }, take: 1 },
+        _count: { select: { messages: true } },
+        messages: { select: { audioBytes: true } },
+      },
+    }),
     prisma.vertical.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
     prisma.priority.findMany({ where: { active: true }, orderBy: { rank: "asc" } }),
     prisma.team.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
@@ -34,12 +45,30 @@ export default async function CboAllTasks({ searchParams }: { searchParams: Task
           {allTasks.length === 0 ? <div className="px-6 py-8 text-sm text-muted-foreground text-center">No active tasks found.</div> : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm border-collapse">
-                <thead><tr className="border-b border-border bg-muted/40"><Th>Task ID</Th><Th>Vertical</Th><Th minW="200px">Task / Activity</Th><Th>Priority</Th><Th minW="140px">Assigned</Th><Th>Deadline</Th><Th>Status</Th><Th>Last Update</Th><Th minW="160px">Delay Reason</Th><Th minW="160px">Support Needed</Th><Th>Dr. BN?</Th><Th minW="180px">Next Action</Th></tr></thead>
+                <thead><tr className="border-b border-border bg-muted/40"><Th>Task ID</Th><Th>Vertical</Th><Th minW="200px">Task / Activity</Th><Th>Priority</Th><Th minW="140px">Assigned</Th><Th>Deadline</Th><Th>Status</Th><Th>Last Update</Th><Th minW="160px">Delay Reason</Th><Th minW="160px">Support Needed</Th><Th>Dr. BN?</Th><Th minW="180px">Next Action</Th><Th>Chat</Th></tr></thead>
                 <tbody>
                   {allTasks.map((t, i) => {
                     const lastUpdate = t.updates[0]; const isDelayed = t.status === "DELAYED";
-                    const assigneeNames = t.teamAssignments.length > 0 ? t.teamAssignments.map((ta) => `[${ta.team.name}]`).join(", ") : t.assignees.map((a) => a.member.name).join(", ") || "—";
-                    return (<tr key={t.id} className={["border-b border-border transition-colors hover:bg-accent/50", isDelayed ? "bg-destructive/[0.03]" : i % 2 === 0 ? "" : "bg-muted/20"].join(" ")}><Td><span className="font-mono text-xs font-semibold whitespace-nowrap">{t.code}</span></Td><Td><span className="inline-block rounded px-1.5 py-0.5 text-[11px] font-bold text-white whitespace-nowrap" style={{ backgroundColor: t.vertical.colorHex }}>{t.vertical.name}</span></Td><Td><span className="font-medium line-clamp-2 max-w-[220px]" title={t.title}>{t.title}</span></Td><Td><PriorityBadge code={t.priority.code} /></Td><Td><div className="text-xs whitespace-nowrap">{assigneeNames}</div></Td><Td>{t.deadline ? <span className={["text-xs whitespace-nowrap", new Date(t.deadline) < new Date() && t.status !== "COMPLETED" ? "text-destructive font-semibold" : "text-muted-foreground"].join(" ")}>{formatDate(t.deadline)}</span> : <span className="text-xs text-muted-foreground">—</span>}</Td><Td><StatusBadge status={t.status} /></Td><Td>{lastUpdate ? <div className="text-xs max-w-[160px]"><div className="text-muted-foreground whitespace-nowrap">{formatRelative(lastUpdate.createdAt)}</div><div className="mt-0.5 line-clamp-2 text-foreground/70" title={lastUpdate.note}>{lastUpdate.note.replace(/^[^\w]+ ?/, "").slice(0, 60)}{lastUpdate.note.length > 60 ? "…" : ""}</div></div> : <span className="text-xs text-muted-foreground">No updates yet</span>}</Td><Td><span className="text-xs text-muted-foreground line-clamp-2 max-w-[160px]" title={t.delayReason || undefined}>{t.delayReason || "—"}</span></Td><Td><span className="text-xs text-muted-foreground line-clamp-2 max-w-[160px]" title={t.supportNeeded || undefined}>{t.supportNeeded || "—"}</span></Td><Td>{t.intervention === "NO" ? <span className="text-xs text-muted-foreground">No</span> : t.intervention === "YES" ? <Badge variant="warning" className="text-[10px] whitespace-nowrap">Yes</Badge> : <Badge variant="info" className="text-[10px] whitespace-nowrap">If delayed</Badge>}</Td><Td><span className="text-xs text-muted-foreground line-clamp-2 max-w-[180px]" title={t.nextAction || undefined}>{t.nextAction || "—"}</span></Td></tr>);
+                    const assigneeLabel = t.teamAssignments.length > 0 ? t.teamAssignments.map((ta) => `[${ta.team.name}]`).join(", ") : t.assignees.map((a) => a.member.name).join(", ") || "—";
+                    const textCount = t.messages.filter((m) => m.text != null).length;
+                    const voiceCount = t.messages.filter((m) => m.audioBytes != null).length;
+                    return (
+                      <tr key={t.id} className={`border-b border-border ${i % 2 === 0 ? "bg-card" : "bg-muted/10"} ${isDelayed ? "bg-red-50 dark:bg-red-950/10" : ""}`}>
+                        <td><Link href={`/cbo?taskId=${t.id}`} className="font-mono text-xs text-primary hover:underline">{t.code}</Link></td>
+                        <td><span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ backgroundColor: t.vertical.colorHex }}>{t.vertical.name}</span></td>
+                        <td className="text-xs truncate max-w-[200px]">{t.title}</td>
+                        <td><PriorityBadge code={t.priority.code} /></td>
+                        <td className="text-xs text-muted-foreground">{assigneeLabel}</td>
+                        <td className="text-xs">{t.deadline ? formatDate(t.deadline) : "—"}</td>
+                        <td><StatusBadge status={t.status} /></td>
+                        <td className="text-xs text-muted-foreground">{lastUpdate ? formatRelative(lastUpdate.createdAt) : "—"}</td>
+                        <td className={`text-xs ${isDelayed ? "text-red-600 font-semibold" : ""}`}>{t.delayReason || "—"}</td>
+                        <td className="text-xs">{t.supportNeeded || "—"}</td>
+                        <td className="text-xs">{t.intervention === "NO" ? "No" : t.intervention === "YES" ? "Yes" : "If delayed"}</td>
+                        <td className="text-xs">{t.nextAction || "—"}</td>
+                        <td><ConversationButton taskId={t.id} baseUrl="/cbo" textCount={textCount} voiceCount={voiceCount} /></td>
+                      </tr>
+                    );
                   })}
                 </tbody>
               </table>
@@ -51,5 +80,6 @@ export default async function CboAllTasks({ searchParams }: { searchParams: Task
   );
 }
 
-function Th({ children, minW }: { children: React.ReactNode; minW?: string }) { return <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground whitespace-nowrap" style={minW ? { minWidth: minW } : undefined}>{children}</th>; }
-function Td({ children }: { children: React.ReactNode }) { return <td className="px-3 py-2.5 align-top">{children}</td>; }
+function Th({ children, minW }: { children: React.ReactNode; minW?: string }) {
+  return <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-muted-foreground" style={minW ? { minWidth: minW } : undefined}>{children}</th>;
+}

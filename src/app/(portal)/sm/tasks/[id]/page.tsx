@@ -9,8 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { formatRelative, formatDate } from "@/lib/utils";
 import { TaskUpdateForm } from "./update-form";
 import { TaskActions } from "./task-actions";
+import { SmTaskChat } from "./sm-chat";
 
-export default async function TaskDetail({ params }: { params: { id: string } }) {
+export default async function TaskDetail({ params, searchParams }: { params: { id: string }; searchParams: { chat?: string } }) {
   const session = await auth();
   if (!canManageTasks(session?.user.systemRole)) redirect("/");
 
@@ -21,6 +22,7 @@ export default async function TaskDetail({ params }: { params: { id: string } })
       teamAssignments: { include: { team: true } },
       assignees: { include: { member: { include: { team: { select: { name: true } } } } } },
       updates: { orderBy: { createdAt: "desc" }, include: { author: true } },
+      messages: { orderBy: { createdAt: "asc" }, include: { author: { select: { id: true, name: true } } } },
     },
   });
   if (!task) notFound();
@@ -31,7 +33,6 @@ export default async function TaskDetail({ params }: { params: { id: string } })
     teamName: a.member.team.name, sendEmail: a.sendEmail,
   }));
 
-  // Fetch teams for the email trigger selectors
   const teams = await prisma.team.findMany({
     where: { active: true },
     orderBy: { name: "asc" },
@@ -80,7 +81,7 @@ export default async function TaskDetail({ params }: { params: { id: string } })
           </CardContent>
         </Card>
       </div>
-      <Card><CardHeader><CardTitle>Update History</CardTitle></CardHeader>
+      <Card id="conversation-section"><CardHeader><CardTitle>Update History</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           {task.updates.length === 0 ? <div className="text-sm text-muted-foreground">No updates yet.</div> : task.updates.map((u) => (
             <div key={u.id} className="rounded-lg border border-border p-3">
@@ -91,6 +92,9 @@ export default async function TaskDetail({ params }: { params: { id: string } })
           ))}
         </CardContent>
       </Card>
+
+      {/* SM Chat box */}
+      <SmTaskChat taskId={task.id} messages={task.messages} defaultOpen={searchParams.chat === "1"} />
     </div>
   );
 }
