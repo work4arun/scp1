@@ -8,8 +8,9 @@ WORKDIR /app
 RUN apk add --no-cache openssl
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
+ENV BUN_FROZEN_LOCKFILE=0
 RUN --mount=type=cache,target=/root/.bun/install/cache \
-    bun install --no-frozen-lockfile --production --ignore-scripts
+    bun install --production --ignore-scripts
 RUN bun prisma generate
 
 FROM oven/bun:1-alpine AS builder
