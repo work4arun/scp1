@@ -1,47 +1,47 @@
 # syntax=docker/dockerfile:1.7
-# ── Strategic Control Portal — Bun + Standalone Production Build ──
-# Multi-stage: deps → builder → runner
-# Uses Bun for fast installs (~3s cached) + Next.js standalone output for tiny runner
+# ── Strategic Control Portal — Next.js Standalone Production Build ──
+# Uses Next.js `output: "standalone"` for lightweight self-contained runner.
+# BuildKit layer caching keeps npm install and .next/cache across rebuilds.
 
-FROM oven/bun:1-alpine AS deps
+FROM node:20-alpine AS deps
 WORKDIR /app
 RUN apk add --no-cache openssl
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
-RUN --mount=type=cache,target=/root/.bun/install/cache \
-    CI= bun install --production --ignore-scripts && bun prisma generate
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --prefer-offline --no-audit --no-fund \
+ && npm cache clean --force
 
-FROM oven/bun:1-alpine AS builder
+FROM node:20-alpine AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN apk add --no-cache openssl
+RUN apk add --no-cache libc6-compat openssl
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/node_modules/.prisma ./node_modules/.prisma
 COPY . .
 RUN mkdir -p public
 RUN --mount=type=cache,target=/app/.next/cache \
-    --mount=type=cache,target=/root/.bun/install/cache \
-    bun --bun next build
+    --mount=type=cache,target=/root/.npm \
+    npm run build
 
-FROM oven/bun:1-alpine AS runner
+FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN apk add --no-cache openssl tini \
- && addgroup -S bunjs && adduser -S nextjs -G bunjs
+ && addgroup -S nodejs && adduser -S nextjs -G nodejs
 
-# Copy standalone server + static files
-COPY --from=builder --chown=nextjs:bunjs /app/public ./public
-COPY --from=builder --chown=nextjs:bunjs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:bunjs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:bunjs /app/prisma ./prisma
-COPY --from=builder --chown=nextjs:bunjs /app/node_modules/.prisma ./node_modules/.prisma
+# Copy standalone server + static files (standalone includes its own minimal node_modules)
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 
-COPY --chown=nextjs:bunjs docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY --chown=nextjs:nodejs docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 USER nextjs
 EXPOSE 3000
 ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/entrypoint.sh"]
-CMD ["bun", "run", "server.js"]
+CMD ["node", "server.js"]
