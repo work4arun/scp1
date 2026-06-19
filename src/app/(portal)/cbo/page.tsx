@@ -92,9 +92,17 @@ export default async function CboHome({ searchParams }: { searchParams: Record<s
                   <span className="font-mono text-[10px] font-bold text-muted-foreground shrink-0">{t.code}</span>
                   <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold text-white shrink-0" style={{ backgroundColor: t.vertical.colorHex }}>{t.vertical.name}</span>
                   <span className="text-sm font-medium truncate group-hover:text-primary">{t.title}</span>
-                  <span className="text-[10px] text-muted-foreground truncate hidden sm:inline">{assigneeNames}{t.deadline ? ` · ${formatDate(t.deadline)}` : ""} · {formatRelative(t.lastUpdateAt || t.updatedAt)}</span>
+                  <span className="text-[10px] text-muted-foreground truncate hidden sm:inline">{assigneeNames}{t.deadline ? ` · ${formatDate(t.deadline)}` : ""}</span>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Chat indicator */}
+                  {hasChat && (
+                    <span className="inline-flex items-center gap-1 text-[10px]">
+                      {textCount > 0 && <span className="inline-flex items-center justify-center h-4 min-w-[16px] rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">{textCount}</span>}
+                      {voiceCount > 0 && <span className="inline-flex items-center gap-0.5"><Mic className="h-3 w-3" />{voiceCount}</span>}
+                    </span>
+                  )}
+                  <TaskNotePanel taskId={t.id} notes={t.cboNotes.map(({ audioBytes, ...n }: any) => ({ ...n, audioBase64: audioBytes ? Buffer.from(audioBytes).toString("base64") : null }))} readOnly />
                   <PriorityBadge code={t.priority.code} />
                   <StatusBadge status={t.status} />
                 </div>

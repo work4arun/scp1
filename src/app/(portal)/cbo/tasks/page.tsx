@@ -68,7 +68,7 @@ export default async function CboAllTasks({ searchParams }: { searchParams: Task
                         <tr key={t.id} className={`border-b border-border ${i % 2 === 0 ? "bg-card" : "bg-muted/10"} ${isDelayed ? "bg-red-50 dark:bg-red-950/10" : ""}`}>
                           <td><Link href={`/cbo/tasks/${t.id}`} className="font-mono text-xs text-primary hover:underline">{t.code}</Link></td>
                           <td><span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ backgroundColor: t.vertical.colorHex }}>{t.vertical.name}</span></td>
-                          <td className="text-xs truncate max-w-[200px]">{t.title}</td>
+                        <td className="text-xs truncate max-w-[200px]"><Link href={`/cbo/tasks/${t.id}`} className="hover:text-primary">{t.title}</Link></td>
                           <td><PriorityBadge code={t.priority.code} /></td>
                           <td className="text-xs text-muted-foreground">{assigneeLabel}</td>
                           <td className="text-xs">{t.deadline ? formatDate(t.deadline) : "—"}</td>
