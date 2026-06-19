@@ -31,17 +31,16 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN apk add --no-cache openssl tini \
  && addgroup -S nodejs && adduser -S nextjs -G nodejs
 
-# Copy standalone server + static files (standalone includes its own minimal node_modules)
+# Copy ALL node_modules from deps (includes prisma CLI, engines, and all deps)
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
+# Overlay standalone server (optimized, self-contained)
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./standalone-work
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
-# Copy Prisma CLI + engines + generated client (needed for db push in entrypoint)
-COPY --from=deps --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
-COPY --from=deps --chown=nextjs:nodejs /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
-COPY --from=deps --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=deps --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
+
+# Merge standalone's minimal server.js from standalone-work into /app
+RUN cp standalone-work/server.js . && rm -rf standalone-work
 
 COPY --chown=nextjs:nodejs docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
