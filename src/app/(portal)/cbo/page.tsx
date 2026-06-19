@@ -98,7 +98,7 @@ export default async function CboHome({ searchParams }: { searchParams: Record<s
                   <PriorityBadge code={t.priority.code} />
                   <StatusBadge status={t.status} />
                   <Link
-                    href={`/sm/tasks/${t.id}?chat=1#conversation-section`}
+                    href={`/cbo/tasks/${t.id}?chat=1#conversation-section`}
                     className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-xs font-medium transition-colors hover:bg-accent hover:border-primary/40 shrink-0"
                     title="Open conversation"
                   >

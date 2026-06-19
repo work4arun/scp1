@@ -78,7 +78,7 @@ export default async function CboAllTasks({ searchParams }: { searchParams: Task
                           <td className="text-xs">{t.supportNeeded || "—"}</td>
                           <td className="text-xs">{t.intervention === "NO" ? "No" : t.intervention === "YES" ? "Yes" : "If delayed"}</td>
                           <td className="text-xs">{t.nextAction || "—"}</td>
-                          <td><ConversationButton taskId={t.id} baseUrl="/sm/tasks" textCount={textCount} voiceCount={voiceCount} /></td>
+                          <td><ConversationButton taskId={t.id} baseUrl="/cbo/tasks" textCount={textCount} voiceCount={voiceCount} /></td>
                         </tr>
                       );
                     })}
@@ -111,7 +111,7 @@ export default async function CboAllTasks({ searchParams }: { searchParams: Task
                       {t.delayReason && <div className="text-xs text-red-600 font-semibold">Delay: {t.delayReason}</div>}
                       {t.supportNeeded && <div className="text-xs">Support: {t.supportNeeded}</div>}
                       {t.nextAction && <div className="text-xs text-muted-foreground">Next: {t.nextAction}</div>}
-                      <ConversationButton taskId={t.id} baseUrl="/sm/tasks" textCount={textCount} voiceCount={voiceCount} />
+                      <ConversationButton taskId={t.id} baseUrl="/cbo/tasks" textCount={textCount} voiceCount={voiceCount} />
                     </div>
                   );
                 })}
