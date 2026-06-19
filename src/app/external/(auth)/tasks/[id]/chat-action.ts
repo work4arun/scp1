@@ -11,7 +11,6 @@ export async function sendMessageAction(formData: FormData) {
 
   if (!taskId || !memberId) return { success: false };
 
-  // Verify member is assigned to this task
   const assignment = await prisma.taskAssignment.findUnique({
     where: { taskId_memberId: { taskId, memberId } },
   });
@@ -25,10 +24,13 @@ export async function sendMessageAction(formData: FormData) {
 
   if (!text && !audioBytes) return { success: false };
 
+  const member = await prisma.teamMember.findUnique({ where: { id: memberId }, select: { name: true } });
+
   await prisma.taskMessage.create({
     data: {
       taskId,
       authorId: memberId,
+      authorName: member?.name || "Member",
       authorRole: "member",
       text: text || null,
       audioBytes: audioBytes || null,

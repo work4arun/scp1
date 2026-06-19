@@ -16,7 +16,7 @@ interface Message {
   audioDurationS: number | null;
   authorId: string;
   authorRole: string;
-  author: { id: string; name: string };
+  authorName: string;
   createdAt: Date;
 }
 
@@ -127,7 +127,7 @@ export function TaskChat({
                         isMine ? "bg-primary text-primary-foreground" : "bg-card border border-border"
                       }`}>
                         <div className="text-[10px] font-semibold opacity-80 mb-0.5">
-                          {isMine ? "You" : msg.author.name}
+                          {isMine ? "You" : msg.authorName || "Member"}
                           {msg.authorRole === "sm" && <span className="text-[9px] ml-1 opacity-60">(SM)</span>}
                         </div>
                         {msg.text && <p className="text-sm whitespace-pre-wrap">{msg.text}</p>}
