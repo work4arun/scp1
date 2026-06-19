@@ -22,7 +22,7 @@ export default async function TaskDetail({ params, searchParams }: { params: { i
       teamAssignments: { include: { team: true } },
       assignees: { include: { member: { include: { team: { select: { name: true } } } } } },
       updates: { orderBy: { createdAt: "desc" }, include: { author: true } },
-      messages: { orderBy: { createdAt: "asc" }, include: { author: { select: { id: true, name: true } } } },
+      messages: { orderBy: { createdAt: "asc" } },
     },
   });
   if (!task) notFound();
