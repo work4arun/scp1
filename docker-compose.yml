@@ -26,6 +26,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    x-bake:
+      cache-from:
+        - type=local,src=/tmp/.buildx-cache
+      cache-to:
+        - type=local,dest=/tmp/.buildx-cache,mode=max
     image: scp-app:latest
     container_name: scp-app
     restart: unless-stopped
