@@ -20,7 +20,7 @@ export function SmtpConfigForm({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  const [host, setHost] = useState(savedConfig?.host || process.env.NEXT_PUBLIC_SMTP_HOST || "");
+  const [host, setHost] = useState(savedConfig?.host || "");
   const [port, setPort] = useState(String(savedConfig?.port || 587));
   const [secure, setSecure] = useState(savedConfig?.secure ?? false);
   const [user, setUser] = useState(savedConfig?.user || "");
@@ -133,13 +133,14 @@ export function SmtpConfigForm({
             <Input
               id="from"
               name="from"
-              placeholder='SCP System <noreply@example.com>'
+              placeholder="SCP System <noreply@example.com>"
               value={from}
               onChange={(e) => setFrom(e.target.value)}
               className="text-xs"
             />
             <p className="text-[11px] text-muted-foreground">
-              Display name and email shown in the "From" header. Format: <code>Name <email@domain.com></code>
+              Display name and email shown in the From header. Format: Name{" "}
+              <code>{"<email@domain.com>"}</code>
             </p>
           </div>
 
