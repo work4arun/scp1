@@ -107,18 +107,18 @@ export function NewTaskForm({ verticals, priorities, teams }: { verticals: Verti
           placeholder="Search teams…"
           search={teamSearch} setSearch={setTeamSearch} open={teamDropdownOpen} setOpen={setTeamDropdownOpen}
           items={filterTeams(teamSearch).map((t) => ({ id: t.id, label: `${t.name} (${t.members.length} members)` }))}
-          onSelect={(id) => selectTeam(setSelectedTeamIds, id)}
+          onSelect={(id: string) => selectTeam(setSelectedTeamIds, id)}
         />
         <SelectedChips teams={teams} ids={selectedTeamIds} allMembers={allMembers} memberIds={selectedMemberIds}
           teamEmailFlags={teamEmailFlags} memberEmailFlags={memberEmailFlags}
-          onToggleTeam={toggleTeamEmail} onRemoveTeam={(id) => removeTeam(setSelectedTeamIds, id)}
-          onToggleMember={toggleMemberEmail} onRemoveMember={(id) => removeMember(setSelectedMemberIds, id)}
+          onToggleTeam={toggleTeamEmail} onRemoveTeam={(id: string) => removeTeam(setSelectedTeamIds, id)}
+          onToggleMember={toggleMemberEmail} onRemoveMember={(id: string) => removeMember(setSelectedMemberIds, id)}
         />
         <SearchableSelect
           placeholder="Search individual members…"
           search={memberSearch} setSearch={setMemberSearch} open={memberDropdownOpen} setOpen={setMemberDropdownOpen}
           items={filterMembers(memberSearch).map((m) => ({ id: m.id, label: `${m.name}${m.designation ? ` (${m.designation})` : ""}`, sub: m.teamName }))}
-          onSelect={(id) => selectMember(setSelectedMemberIds, id)}
+          onSelect={(id: string) => selectMember(setSelectedMemberIds, id)}
         />
       </Section>
 
@@ -128,17 +128,17 @@ export function NewTaskForm({ verticals, priorities, teams }: { verticals: Verti
           placeholder="Search CC teams…"
           search={ccTeamSearch} setSearch={setCcTeamSearch} open={ccTeamOpen} setOpen={setCcTeamOpen}
           items={filterTeams(ccTeamSearch).map((t) => ({ id: t.id, label: `${t.name} (${t.members.length} members)` }))}
-          onSelect={(id) => toggleSetItem(setCcTeamIds, id)}
+          onSelect={(id: string) => toggleSetItem(setCcTeamIds, id)}
         />
         <CcBccChips teams={teams} ids={ccTeamIds} allMembers={allMembers} memberIds={ccMemberIds}
-          onRemoveTeam={(id) => toggleSetItem(setCcTeamIds, id)}
-          onRemoveMember={(id) => toggleSetItem(setCcMemberIds, id)}
+          onRemoveTeam={(id: string) => toggleSetItem(setCcTeamIds, id)}
+          onRemoveMember={(id: string) => toggleSetItem(setCcMemberIds, id)}
         />
         <SearchableSelect
           placeholder="Search CC members…"
           search={ccMemberSearch} setSearch={setCcMemberSearch} open={ccMemberOpen} setOpen={setCcMemberOpen}
           items={filterMembers(ccMemberSearch).map((m) => ({ id: m.id, label: `${m.name}${m.designation ? ` (${m.designation})` : ""}`, sub: m.teamName }))}
-          onSelect={(id) => toggleSetItem(setCcMemberIds, id)}
+          onSelect={(id: string) => toggleSetItem(setCcMemberIds, id)}
         />
       </Section>
 
@@ -148,17 +148,17 @@ export function NewTaskForm({ verticals, priorities, teams }: { verticals: Verti
           placeholder="Search BCC teams…"
           search={bccTeamSearch} setSearch={setBccTeamSearch} open={bccTeamOpen} setOpen={setBccTeamOpen}
           items={filterTeams(bccTeamSearch).map((t) => ({ id: t.id, label: `${t.name} (${t.members.length} members)` }))}
-          onSelect={(id) => toggleSetItem(setBccTeamIds, id)}
+          onSelect={(id: string) => toggleSetItem(setBccTeamIds, id)}
         />
         <CcBccChips teams={teams} ids={bccTeamIds} allMembers={allMembers} memberIds={bccMemberIds}
-          onRemoveTeam={(id) => toggleSetItem(setBccTeamIds, id)}
-          onRemoveMember={(id) => toggleSetItem(setBccMemberIds, id)}
+          onRemoveTeam={(id: string) => toggleSetItem(setBccTeamIds, id)}
+          onRemoveMember={(id: string) => toggleSetItem(setBccMemberIds, id)}
         />
         <SearchableSelect
           placeholder="Search BCC members…"
           search={bccMemberSearch} setSearch={setBccMemberSearch} open={bccMemberOpen} setOpen={setBccMemberOpen}
           items={filterMembers(bccMemberSearch).map((m) => ({ id: m.id, label: `${m.name}${m.designation ? ` (${m.designation})` : ""}`, sub: m.teamName }))}
-          onSelect={(id) => toggleSetItem(setBccMemberIds, id)}
+          onSelect={(id: string) => toggleSetItem(setBccMemberIds, id)}
         />
       </Section>
 
