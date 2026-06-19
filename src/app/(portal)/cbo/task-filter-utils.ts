@@ -19,7 +19,7 @@ export function buildTaskWhere(params: TaskFilterParams): Prisma.TaskWhereInput 
   if (params.priority) where.priorityId = params.priority;
   if (params.team) where.teamAssignments = { some: { teamId: params.team } };
   if (params.status) where.status = params.status as Prisma.EnumTaskStatusFilter["equals"];
-  if (params.q) where.title = { contains: params.q, mode: "insensitive" };
+  if (params.q) where.OR = [{ title: { contains: params.q, mode: "insensitive" } }, { code: { contains: params.q, mode: "insensitive" } }];
 
   if (params.deadlineFrom || params.deadlineTo) {
     const deadline: Prisma.DateTimeNullableFilter = {};
