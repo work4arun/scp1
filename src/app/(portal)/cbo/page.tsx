@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge, PriorityBadge } from "@/components/status-badges";
 import { formatRelative, formatDate } from "@/lib/utils";
-import { Layers, MessageSquare, Mic } from "lucide-react";
+import { Layers } from "lucide-react";
 import Link from "next/link";
 import { TaskStatusFilter } from "./overview-status-filter";
 import { TaskNotePanel } from "./task-note-panel";
@@ -87,32 +87,18 @@ export default async function CboHome({ searchParams }: { searchParams: Record<s
             const voiceCount = t.messages.filter((m) => m.audioBytes != null).length;
             const hasChat = textCount > 0 || voiceCount > 0;
             return (
-              <div key={t.id} className="flex items-center gap-2 rounded-md border border-border px-3 py-2 hover:bg-accent transition-colors group">
+              <Link key={t.id} href={`/cbo/tasks/${t.id}`} className="flex items-center gap-2 rounded-md border border-border px-3 py-2 hover:bg-accent transition-colors group cursor-pointer">
                 <div className="flex-1 min-w-0 flex items-center gap-2">
                   <span className="font-mono text-[10px] font-bold text-muted-foreground shrink-0">{t.code}</span>
                   <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold text-white shrink-0" style={{ backgroundColor: t.vertical.colorHex }}>{t.vertical.name}</span>
-                  <Link href={`/cbo/tasks/${t.id}`} className="text-sm font-medium truncate hover:text-primary">{t.title}</Link>
+                  <span className="text-sm font-medium truncate group-hover:text-primary">{t.title}</span>
                   <span className="text-[10px] text-muted-foreground truncate hidden sm:inline">{assigneeNames}{t.deadline ? ` · ${formatDate(t.deadline)}` : ""} · {formatRelative(t.lastUpdateAt || t.updatedAt)}</span>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.preventDefault()}>
                   <PriorityBadge code={t.priority.code} />
                   <StatusBadge status={t.status} />
-                  <Link
-                    href={`/cbo/tasks/${t.id}?chat=1#conversation-section`}
-                    className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-xs font-medium transition-colors hover:bg-accent hover:border-primary/40 shrink-0"
-                    title="Open conversation"
-                  >
-                    <MessageSquare className={`h-3 w-3 ${hasChat ? "text-primary" : "text-muted-foreground"}`} />
-                    {hasChat ? (
-                      <span className="flex items-center gap-1">
-                        {textCount > 0 && <span className="inline-flex items-center justify-center h-4 min-w-[16px] rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">{textCount}</span>}
-                        {voiceCount > 0 && <span className="inline-flex items-center gap-0.5 text-[10px]"><Mic className="h-3 w-3" />{voiceCount}</span>}
-                      </span>
-                    ) : <span className="text-[10px] text-muted-foreground">Chat</span>}
-                  </Link>
-                  <TaskNotePanel taskId={t.id} notes={t.cboNotes.map(({ audioBytes, ...n }: any) => ({ ...n, audioBase64: audioBytes ? Buffer.from(audioBytes).toString("base64") : null }))} />
                 </div>
-              </div>
+              </Link>
             );
           })}
         </CardContent>
