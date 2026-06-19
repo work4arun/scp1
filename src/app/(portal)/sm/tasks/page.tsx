@@ -31,7 +31,7 @@ export default async function TasksPage({ searchParams }: { searchParams: TaskFi
         assignees: { include: { member: true } },
         cboNotes: { orderBy: { createdAt: "desc" }, include: { author: { select: { name: true } } } },
         _count: { select: { messages: true } },
-        messages: { select: { audioBytes: true, audioMime: true } },
+        messages: { select: { text: true, audioBytes: true, audioMime: true } },
       },
     }),
     prisma.vertical.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
