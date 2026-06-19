@@ -29,7 +29,7 @@ DB_NAME="scp_db"
 AUTH_SECRET="super-secret-key-change-in-production-2025"
 APP_DOMAIN="rtc.systitsoft.in"
 LISTMONK_DOMAIN="listmonk.systitsoft.in"
-MAIL_SERVER_DOMAIN="mail_server.systitsoft.in"
+MAIL_DOMAIN="mailserver.systitsoft.in"
 # ─────────────────────────────────────────────────────────────────────────────
 
 PUBLIC_IP="${PUBLIC_IP:-}"
@@ -117,7 +117,7 @@ obtain_cert() {
 setup_ssl() {
   obtain_cert "${APP_DOMAIN}"
   obtain_cert "${LISTMONK_DOMAIN}"
-  obtain_cert "${MAIL_SERVER_DOMAIN}"
+  obtain_cert "${MAIL_DOMAIN}"
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -129,14 +129,14 @@ setup_env() {
   local app_cert_exists=false lm_cert_exists=false mail_cert_exists=false
   sudo test -f "/etc/letsencrypt/live/${APP_DOMAIN}/fullchain.pem" && app_cert_exists=true
   sudo test -f "/etc/letsencrypt/live/${LISTMONK_DOMAIN}/fullchain.pem" && lm_cert_exists=true
-  sudo test -f "/etc/letsencrypt/live/${MAIL_SERVER_DOMAIN}/fullchain.pem" && mail_cert_exists=true
+  sudo test -f "/etc/letsencrypt/live/${MAIL_DOMAIN}/fullchain.pem" && mail_cert_exists=true
 
   local base_url="https://${APP_DOMAIN}"
   local lm_url="https://${LISTMONK_DOMAIN}"
-  local mail_url="https://${MAIL_SERVER_DOMAIN}"
+  local mail_url="https://${MAIL_DOMAIN}"
   if [ "$app_cert_exists" = false ]; then base_url="http://${APP_DOMAIN}"; fi
   if [ "$lm_cert_exists" = false ]; then lm_url="http://${LISTMONK_DOMAIN}"; fi
-  if [ "$mail_cert_exists" = false ]; then mail_url="http://${MAIL_SERVER_DOMAIN}"; fi
+  if [ "$mail_cert_exists" = false ]; then mail_url="http://${MAIL_DOMAIN}"; fi
 
   # Preserve existing SCP_SEED and AUTH_SECRET if .env already exists
   local scp_seed="1"
@@ -174,7 +174,7 @@ LISTMONK_API_PASSWORD=listmonk
 LISTMONK_ADMIN_USER=admin
 LISTMONK_ADMIN_PASSWORD=listmonk
 MAIL_SERVER_URL=${mail_url}
-SMTP_HOST=mail_server
+SMTP_HOST=stalwart
 SMTP_PORT=587
 SMTP_SECURE=false
 SMTP_USER=
@@ -204,7 +204,7 @@ build_and_start() {
   docker compose exec -T db psql -U "${DB_USER}" -d postgres -c "CREATE DATABASE stalwart;" 2>/dev/null || true
 
   log "Starting all containers (app, listmonk, stalwart, nginx)..."
-  docker compose up -d
+  docker compose up -d --remove-orphans
   sleep 5
 }
 
@@ -225,11 +225,11 @@ health_check() {
 summary() {
   local url="http://${APP_DOMAIN}"
   local lm_url="http://${LISTMONK_DOMAIN}"
-  local mail_url="http://${MAIL_SERVER_DOMAIN}"
+  local mail_url="http://${MAIL_DOMAIN}"
   if sudo test -f "/etc/letsencrypt/live/${APP_DOMAIN}/fullchain.pem"; then
     url="https://${APP_DOMAIN}"
     lm_url="https://${LISTMONK_DOMAIN}"
-    mail_url="https://${MAIL_SERVER_DOMAIN}"
+    mail_url="https://${MAIL_DOMAIN}"
   fi
 
   log ""; log "═══ Deployment Complete ═══"
