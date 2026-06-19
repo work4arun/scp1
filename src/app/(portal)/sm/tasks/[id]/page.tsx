@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatRelative, formatDate } from "@/lib/utils";
 import { TaskUpdateForm } from "./update-form";
 import { TaskActions } from "./task-actions";
+import { ConversationButton } from "@/components/conversation-button";
 import { SmTaskChat } from "./sm-chat";
 
 export default async function TaskDetail({ params, searchParams }: { params: { id: string }; searchParams: { chat?: string } }) {
@@ -49,10 +50,16 @@ export default async function TaskDetail({ params, searchParams }: { params: { i
         description={`${task.code} · ${task.vertical.name}`}
         action={<TaskActions taskId={task.id} code={task.code} isSuperAdmin={session?.user.systemRole === "SUPER_ADMIN"} />}
       />
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <PriorityBadge code={task.priority.code} /><StatusBadge status={task.status} />
         {task.intervention !== "NO" ? <Badge variant="warning">Dr. BN: {task.intervention === "YES" ? "Yes" : "Only if delayed"}</Badge> : null}
         {task.frequency ? <Badge variant="info">{task.frequency}</Badge> : null}
+        <ConversationButton
+          taskId={task.id}
+          baseUrl="/sm/tasks"
+          textCount={task.messages.filter((m) => m.text != null).length}
+          voiceCount={task.messages.filter((m) => m.audioBytes != null).length}
+        />
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
