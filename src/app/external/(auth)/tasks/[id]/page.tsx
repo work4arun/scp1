@@ -7,6 +7,7 @@ import { StatusBadge, PriorityBadge } from "@/components/status-badges";
 import { Badge } from "@/components/ui/badge";
 import { formatRelative, formatDate } from "@/lib/utils";
 import { TaskChat } from "./chat-box";
+import { ConversationButton } from "@/components/conversation-button";
 
 export default async function ExternalTaskDetail({ params }: { params: { id: string } }) {
   const token = cookies().get("ext_token")?.value;
@@ -43,12 +44,18 @@ export default async function ExternalTaskDetail({ params }: { params: { id: str
       <h1 className="text-xl font-bold">{task.title}</h1>
       <p className="text-xs text-muted-foreground">{task.code} · {task.vertical.name}</p>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <PriorityBadge code={task.priority.code} />
         <StatusBadge status={task.status} />
         {task.intervention !== "NO" ? (
           <Badge variant="warning">Dr. BN: {task.intervention === "YES" ? "Yes" : "Only if delayed"}</Badge>
         ) : null}
+        <ConversationButton
+          taskId={task.id}
+          baseUrl="/external/tasks"
+          textCount={task.messages.filter((m: any) => m.text != null).length}
+          voiceCount={task.messages.filter((m: any) => m.audioBytes != null).length}
+        />
       </div>
 
       <Card>
