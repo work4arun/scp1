@@ -24,14 +24,6 @@ echo "[scp] Ensuring 'scp_db' database exists..."
 npx --no-install prisma db execute --stdin >/dev/null 2>&1 <<'SQL' || true
 CREATE DATABASE scp_db;
 SQL
-echo "[scp] Ensuring 'listmonk' database exists..."
-npx --no-install prisma db execute --stdin >/dev/null 2>&1 <<'SQL' || true
-CREATE DATABASE listmonk;
-SQL
-echo "[scp] Ensuring 'stalwart' database exists..."
-npx --no-install prisma db execute --stdin >/dev/null 2>&1 <<'SQL' || true
-CREATE DATABASE stalwart;
-SQL
 
 # ── Apply Prisma schema (SAFE — never drop data) ──
 echo "[scp] Applying Prisma schema..."
