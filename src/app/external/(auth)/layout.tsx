@@ -5,7 +5,7 @@ import { ExternalSidebar } from "./sidebar";
 import { ExternalHeader } from "./header";
 import "@/app/globals.css";
 
-export default async function ExternalLayout({ children }: { children: React.ReactNode }) {
+export default async function AuthExternalLayout({ children }: { children: React.ReactNode }) {
   const token = cookies().get("ext_token")?.value;
   if (!token) redirect("/external?error=no-token");
 
