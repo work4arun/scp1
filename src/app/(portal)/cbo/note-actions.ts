@@ -25,7 +25,7 @@ export async function addTextNoteAction(taskId: string, text: string): Promise<N
   try {
     await prisma.cboNote.create({ data: { taskId, authorId: userId, kind: "text", text: text.trim() } });
   } catch (err) { console.error("[addTextNoteAction]", err); return { success: false, error: friendlyPrismaError(err) ?? "Could not save note." }; }
-  revalidatePath("/cbo"); revalidatePath("/sm/notes");
+  revalidatePath("/cbo"); revalidatePath("/cbo/tasks/[id]", "page"); revalidatePath("/sm/notes");
   return { success: true };
 }
 
@@ -39,7 +39,7 @@ export async function addVoiceNoteAction(taskId: string, audioBase64: string, mi
     const audioBytes = Buffer.from(audioBase64, "base64");
     await prisma.cboNote.create({ data: { taskId, authorId: userId, kind: "voice", audioBytes, audioMime: mimeType, audioDurationS: Math.round(durationS) } });
   } catch (err) { console.error("[addVoiceNoteAction]", err); return { success: false, error: friendlyPrismaError(err) ?? "Could not save voice note." }; }
-  revalidatePath("/cbo"); revalidatePath("/sm/notes");
+  revalidatePath("/cbo"); revalidatePath("/cbo/tasks/[id]", "page"); revalidatePath("/sm/notes");
   return { success: true };
 }
 

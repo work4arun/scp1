@@ -91,7 +91,7 @@ export default async function CboHome({ searchParams }: { searchParams: Record<s
                 <div className="flex-1 min-w-0 flex items-center gap-2">
                   <span className="font-mono text-[10px] font-bold text-muted-foreground shrink-0">{t.code}</span>
                   <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold text-white shrink-0" style={{ backgroundColor: t.vertical.colorHex }}>{t.vertical.name}</span>
-                  <Link href={`/cbo?taskId=${t.id}`} className="text-sm font-medium truncate hover:text-primary">{t.title}</Link>
+                  <Link href={`/cbo/tasks/${t.id}`} className="text-sm font-medium truncate hover:text-primary">{t.title}</Link>
                   <span className="text-[10px] text-muted-foreground truncate hidden sm:inline">{assigneeNames}{t.deadline ? ` · ${formatDate(t.deadline)}` : ""} · {formatRelative(t.lastUpdateAt || t.updatedAt)}</span>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">

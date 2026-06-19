@@ -66,7 +66,7 @@ export default async function CboAllTasks({ searchParams }: { searchParams: Task
                       const voiceCount = t.messages.filter((m) => m.audioBytes != null).length;
                       return (
                         <tr key={t.id} className={`border-b border-border ${i % 2 === 0 ? "bg-card" : "bg-muted/10"} ${isDelayed ? "bg-red-50 dark:bg-red-950/10" : ""}`}>
-                          <td><Link href={`/cbo?taskId=${t.id}`} className="font-mono text-xs text-primary hover:underline">{t.code}</Link></td>
+                          <td><Link href={`/cbo/tasks/${t.id}`} className="font-mono text-xs text-primary hover:underline">{t.code}</Link></td>
                           <td><span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ backgroundColor: t.vertical.colorHex }}>{t.vertical.name}</span></td>
                           <td className="text-xs truncate max-w-[200px]">{t.title}</td>
                           <td><PriorityBadge code={t.priority.code} /></td>
@@ -96,7 +96,7 @@ export default async function CboAllTasks({ searchParams }: { searchParams: Task
                   return (
                     <div key={t.id} className={`rounded-lg border p-3 space-y-2 ${isDelayed ? "border-red-300 bg-red-50 dark:bg-red-950/10" : "border-border"}`}>
                       <div className="flex items-center gap-2">
-                        <Link href={`/cbo?taskId=${t.id}`} className="font-mono text-xs font-bold text-primary hover:underline">{t.code}</Link>
+                        <Link href={`/cbo/tasks/${t.id}`} className="font-mono text-xs font-bold text-primary hover:underline">{t.code}</Link>
                         <span className="rounded px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ backgroundColor: t.vertical.colorHex }}>{t.vertical.name}</span>
                         <PriorityBadge code={t.priority.code} />
                         <StatusBadge status={t.status} />
