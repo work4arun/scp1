@@ -88,7 +88,7 @@ services:
       - scp_net
 
   stalwart:
-    image: stalwartlabs/mail-server:latest
+    image: stalwartlabs/stalwart:latest
     container_name: scp-stalwart
     restart: unless-stopped
     ports:
