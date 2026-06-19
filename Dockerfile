@@ -9,14 +9,14 @@ RUN apk add --no-cache openssl
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
 RUN --mount=type=cache,target=/root/.bun/install/cache \
-    bun install --frozen-lockfile=false --production --ignore-scripts
-RUN bun prisma generate
+    rm -f bun.lockb && bun install --production --ignore-scripts && bun prisma generate
 
 FROM oven/bun:1-alpine AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN apk add --no-cache openssl
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/node_modules/.prisma ./node_modules/.prisma
 COPY . .
 RUN mkdir -p public
 RUN --mount=type=cache,target=/app/.next/cache \
