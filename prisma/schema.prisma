@@ -62,6 +62,8 @@ model TeamMember {
   createdAt   DateTime @default(now())
 
   taskAssignments TaskAssignment[]
+  accessTokens    ExternalAccessToken[]
+  messages        TaskMessage[]
 
   @@unique([teamId, email])
   @@index([teamId])
@@ -293,6 +295,8 @@ model Task {
   cboNotes       CboNote[]
   emailLogs      EmailLog[]
   updates        TaskUpdate[]
+  accessTokens   ExternalAccessToken[]
+  messages       TaskMessage[]
 
   @@index([verticalId, status])
   @@index([priorityId])
