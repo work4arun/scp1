@@ -1,8 +1,6 @@
 # Strategic Control Portal — production stack with SSL
-# Services: db (Postgres 16), app (Next.js), listmonk (email), nginx (SSL proxy)
-# Nginx handles SSL termination for both domains:
-#   - rtc.systitsoft.in → app:3000
-#   - listmonk.systitsoft.in → listmonk:9000
+# Services: db (Postgres 16), app (Next.js), nginx (SSL proxy)
+# Email via Nodemailer (configured in Admin → Email Configuration)
 
 services:
   db:
@@ -42,9 +40,6 @@ services:
       NODE_ENV: production
       PORT: "3000"
       SCP_SEED: ${SCP_SEED:-0}
-      LISTMONK_URL: ${LISTMONK_URL:-https://listmonk.systitsoft.in}
-      LISTMONK_API_USER: ${LISTMONK_API_USER:-admin}
-      LISTMONK_API_PASSWORD: ${LISTMONK_API_PASSWORD:-listmonk}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-false}
@@ -54,35 +49,6 @@ services:
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-}
     ports:
       - "3000:3000"
-    networks:
-      - scp_net
-
-  listmonk:
-    image: listmonk/listmonk:latest
-    container_name: scp-listmonk
-    restart: unless-stopped
-    ports:
-      - "9000:9000"
-    depends_on:
-      db:
-        condition: service_healthy
-    command: [sh, -c, "./listmonk --install --idempotent --yes --config '' && ./listmonk --upgrade --yes --config '' && ./listmonk --config ''"]
-    environment:
-      LISTMONK_app__address: 0.0.0.0:9000
-      LISTMONK_db__user: ${POSTGRES_USER:-scp_user1}
-      LISTMONK_db__password: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
-      LISTMONK_db__database: listmonk
-      LISTMONK_db__host: db
-      LISTMONK_db__port: 5432
-      LISTMONK_db__ssl_mode: disable
-      LISTMONK_db__max_open: 25
-      LISTMONK_db__max_idle: 25
-      LISTMONK_db__max_lifetime: 300s
-      TZ: Etc/UTC
-      LISTMONK_ADMIN_USER: ${LISTMONK_ADMIN_USER:-admin}
-      LISTMONK_ADMIN_PASSWORD: ${LISTMONK_ADMIN_PASSWORD:-listmonk}
-    volumes:
-      - listmonk_uploads:/listmonk/uploads:rw
     networks:
       - scp_net
 
@@ -98,15 +64,12 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - app
-      - listmonk
     networks:
       - scp_net
 
 volumes:
   scp_pgdata:
     name: scp_pgdata
-  listmonk_uploads:
-    name: listmonk_uploads
 
 networks:
   scp_net:

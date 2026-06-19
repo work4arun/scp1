@@ -2,40 +2,74 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { canManageTasks } from "@/lib/rbac";
 import { PageHeader } from "@/components/page-header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { prisma } from "@/lib/prisma";
 
 export default async function EmailsPage() {
   const session = await auth();
   if (!canManageTasks(session?.user.systemRole)) redirect("/");
 
-  // Listmonk URL — from env or fallback to localhost:9000
-  const listmonkUrl = process.env.LISTMONK_URL || "http://localhost:9000";
+  const logs = await prisma.emailLog.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 50,
+    select: {
+      id: true,
+      recipient: true,
+      subject: true,
+      status: true,
+      errorMsg: true,
+      createdAt: true,
+      task: { select: { code: true, title: true } },
+    },
+  });
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <PageHeader title="Email Campaigns" description="Manage email templates, subscribers, and campaigns via Listmonk." />
+      <PageHeader
+        title="Email Logs"
+        description="Recent email notification history sent via Nodemailer SMTP."
+      />
 
-      <Card className="overflow-hidden">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <div className="flex items-center gap-3">
-            <CardTitle>Listmonk Admin</CardTitle>
-            <Badge variant="info">Embedded</Badge>
-          </div>
-          <a href={listmonkUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-primary hover:underline">
-            Open in new tab ↗
-          </a>
-        </CardHeader>
-        <CardContent className="p-0">
-          <iframe
-            src={listmonkUrl}
-            className="w-full border-0"
-            style={{ height: "calc(100vh - 220px)", minHeight: "600px" }}
-            title="Listmonk Email Manager"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-          />
-        </CardContent>
-      </Card>
+      {logs.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No email logs yet. Emails are sent when tasks are created and assigned to teams/members.</p>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="w-full text-xs">
+            <thead className="bg-muted">
+              <tr>
+                <th className="px-3 py-2 text-left">Recipient</th>
+                <th className="px-3 py-2 text-left">Subject</th>
+                <th className="px-3 py-2 text-left">Status</th>
+                <th className="px-3 py-2 text-left">Task</th>
+                <th className="px-3 py-2 text-left">Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.map((log) => (
+                <tr key={log.id} className="border-t border-border">
+                  <td className="px-3 py-2 font-mono text-[11px]">{log.recipient}</td>
+                  <td className="px-3 py-2 max-w-[200px] truncate">{log.subject}</td>
+                  <td className="px-3 py-2">
+                    <span
+                      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                        log.status === "sent"
+                          ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-400"
+                          : log.status === "pending"
+                          ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-400"
+                          : "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-400"
+                      }`}
+                    >
+                      {log.status}
+                    </span>
+                    {log.errorMsg && <p className="text-[10px] text-destructive mt-0.5">{log.errorMsg}</p>}
+                  </td>
+                  <td className="px-3 py-2">{log.task ? `${log.task.code} — ${log.task.title}` : "—"}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{new Date(log.createdAt).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

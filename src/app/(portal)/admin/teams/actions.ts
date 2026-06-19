@@ -46,33 +46,54 @@ export async function upsertTeamAction(formData: FormData): Promise<TeamResult> 
   return { success: true };
 }
 
-// ────────── Listmonk Config ──────────
-export type ListmonkConfigResult = { success: true } | { success: false; error: string };
+// ────────── SMTP Config ──────────
+export type SmtpConfigResult = { success: true } | { success: false; error: string };
 
-export async function saveListmonkConfigAction(formData: FormData): Promise<ListmonkConfigResult> {
+export async function saveSmtpConfigAction(formData: FormData): Promise<SmtpConfigResult> {
   const authed = await ensureAdmin();
   if (!authed.ok) return { success: false, error: authed.error };
 
-  const baseUrl = String(formData.get("baseUrl") || "").trim();
-  const userId = String(formData.get("userId") || "").trim();
-  const apiKey = String(formData.get("apiKey") || "").trim();
-  const templateIdRaw = String(formData.get("templateId") || "").trim();
-  const templateId = templateIdRaw ? parseInt(templateIdRaw, 10) : null;
+  const host = String(formData.get("host") || "").trim();
+  const port = parseInt(String(formData.get("port") || "587"), 10);
+  const secure = String(formData.get("secure") || "false") === "true";
+  const user = String(formData.get("user") || "").trim();
+  const pass = String(formData.get("pass") || "").trim();
+  const from = String(formData.get("from") || "").trim();
 
-  if (!baseUrl || !userId || !apiKey) return { success: false, error: "Base URL, username, and API key are required." };
+  if (!host || !user) return { success: false, error: "SMTP host and username are required." };
 
   try {
-    await prisma.listmonkConfig.upsert({
+    const data: any = {
+      host, port, secure, user, from: from || user, updatedBy: authed.userId,
+    };
+    // Only update password if a new one was provided
+    if (pass) data.pass = pass;
+
+    // Check for existing config to preserve password if blank
+    const existing = await prisma.smtpConfig.findUnique({ where: { id: "default" } });
+
+    await prisma.smtpConfig.upsert({
       where: { id: "default" },
-      update: { baseUrl, userId, apiKey, templateId, updatedBy: authed.userId },
-      create: { id: "default", baseUrl, userId, apiKey, templateId, updatedBy: authed.userId },
+      create: {
+        id: "default",
+        host, port, secure, user,
+        pass: pass || "",
+        from: from || user,
+        updatedBy: authed.userId,
+      },
+      update: {
+        host, port, secure, user,
+        ...(pass ? { pass } : {}),
+        from: from || user,
+        updatedBy: authed.userId,
+      },
     });
   } catch (err) {
-    console.error("[saveListmonkConfigAction] DB error", err);
-    return { success: false, error: friendlyPrismaError(err) ?? "Could not save credentials." };
+    console.error("[saveSmtpConfigAction] DB error", err);
+    return { success: false, error: friendlyPrismaError(err) ?? "Could not save SMTP configuration." };
   }
 
-  revalidatePath("/admin/teams");
+  revalidatePath("/admin/emails");
   return { success: true };
 }
 

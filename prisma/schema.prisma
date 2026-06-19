@@ -141,14 +141,16 @@ model FeatureFlag {
   @@index([category])
 }
 
-model ListmonkConfig {
-  id         String   @id @default("default")
-  baseUrl    String?
-  userId     String
-  apiKey     String
-  templateId Int?
-  updatedAt  DateTime @updatedAt
-  updatedBy  String?
+model SmtpConfig {
+  id        String  @id @default("default")
+  host      String
+  port      Int     @default(587)
+  secure    Boolean @default(false)
+  user      String
+  pass      String
+  from      String
+  updatedBy String?
+  updatedAt DateTime @updatedAt
 }
 
 model EmailLog {

@@ -8,8 +8,7 @@ import type { TaskSource, InterventionFlag } from "@prisma/client";
 import { writeAudit } from "@/lib/audit";
 import { friendlyPrismaError } from "@/lib/prisma-errors";
 import { computeNextTaskCode } from "@/lib/task-code";
-import { getListmonkConfig } from "@/lib/listmonk-config";
-import { sendTxEmail } from "@/lib/listmonk";
+import { sendEmail } from "@/lib/email";
 
 export type CreateTaskResult =
   | { success: true; id: string }
@@ -105,49 +104,88 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
 
   revalidatePath("/sm"); revalidatePath("/sm/tasks"); revalidatePath("/cbo");
 
-  const lmConfig = await getListmonkConfig();
-  if (lmConfig) {
-    const recipients: { email: string; name: string }[] = [];
+  // ── Send notification emails via Nodemailer ──────────────────────────
+  const recipients: { email: string; name: string }[] = [];
 
-    if (teamIds.length > 0) {
-      const teamMembers = await prisma.teamMember.findMany({
-        where: { teamId: { in: teamIds }, active: true }, select: { name: true, email: true },
-      });
-      for (const m of teamMembers) {
-        const shouldSend = teamIds.some((tid) => teamSendEmailMap.get(tid) !== false);
-        if (shouldSend) recipients.push({ email: m.email, name: m.name });
-      }
-    }
-
-    if (memberIds.length > 0) {
-      const members = await prisma.teamMember.findMany({
-        where: { id: { in: memberIds }, active: true }, select: { id: true, name: true, email: true },
-      });
-      for (const m of members) {
-        if (memberSendEmailMap.get(m.id) !== false) recipients.push({ email: m.email, name: m.name });
-      }
-    }
-
-    const sent = new Set<string>();
-    for (const r of recipients) {
-      if (sent.has(r.email)) continue; sent.add(r.email);
-      const log = await prisma.emailLog.create({
-        data: { taskId: created.id, recipient: r.email, subject: `[SCP] New Task: ${created.code}`, status: "pending" },
-      });
-      const result = await sendTxEmail(lmConfig, {
-        subscriberEmail: r.email, subscriberName: r.name,
-        taskTitle: created.title, priority: priorityCode,
-        deadline: deadlineStr || undefined,
-        expectedOutput: expectedOutput || undefined,
-        drBnIntervention: intervention !== "NO",
-      });
-      await prisma.emailLog.update({
-        where: { id: log.id },
-        data: { status: result.success ? "sent" : "failed", errorMsg: result.error || null },
-      });
+  if (teamIds.length > 0) {
+    const teamMembers = await prisma.teamMember.findMany({
+      where: { teamId: { in: teamIds }, active: true },
+      select: { name: true, email: true },
+    });
+    for (const m of teamMembers) {
+      const shouldSend = teamIds.some((tid) => teamSendEmailMap.get(tid) !== false);
+      if (shouldSend) recipients.push({ email: m.email, name: m.name });
     }
   }
 
-  await writeAudit({ actorId: session.user.id, action: "task.create", entity: "Task", entityId: created.id, after: created, note: `Created ${created.code}` });
+  if (memberIds.length > 0) {
+    const members = await prisma.teamMember.findMany({
+      where: { id: { in: memberIds }, active: true },
+      select: { id: true, name: true, email: true },
+    });
+    for (const m of members) {
+      if (memberSendEmailMap.get(m.id) !== false) recipients.push({ email: m.email, name: m.name });
+    }
+  }
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const sent = new Set<string>();
+  for (const r of recipients) {
+    if (sent.has(r.email)) continue;
+    sent.add(r.email);
+
+    const subject = `[SCP] New Task: ${created.code} — ${created.title}`;
+    const html = `
+      <h2>New Task Assigned</h2>
+      <p>Hello ${r.name || "Team Member"},</p>
+      <p>A new task has been assigned to you:</p>
+      <table style="border-collapse:collapse;width:100%;max-width:600px">
+        <tr><td style="padding:6px;font-weight:bold">Task Code</td><td style="padding:6px">${created.code}</td></tr>
+        <tr><td style="padding:6px;font-weight:bold">Title</td><td style="padding:6px">${created.title}</td></tr>
+        <tr><td style="padding:6px;font-weight:bold">Priority</td><td style="padding:6px">${priorityCode}</td></tr>
+        ${deadlineStr ? `<tr><td style="padding:6px;font-weight:bold">Deadline</td><td style="padding:6px">${new Date(deadlineStr).toLocaleDateString()}</td></tr>` : ""}
+        ${expectedOutput ? `<tr><td style="padding:6px;font-weight:bold">Expected Output</td><td style="padding:6px">${expectedOutput}</td></tr>` : ""}
+      </table>
+      <p style="margin-top:16px">
+        <a href="${appUrl}/sm/tasks/${created.id}" style="background:#4f46e5;color:white;padding:10px 20px;text-decoration:none;border-radius:6px">
+          View Task
+        </a>
+      </p>
+    `;
+
+    const log = await prisma.emailLog.create({
+      data: {
+        taskId: created.id,
+        recipient: r.email,
+        subject,
+        status: "pending",
+      },
+    });
+
+    const result = await sendEmail({
+      to: r.email,
+      subject,
+      html,
+      text: `New task: ${created.code} — ${created.title}\nPriority: ${priorityCode}${deadlineStr ? `\nDeadline: ${new Date(deadlineStr).toLocaleDateString()}` : ""}\nView: ${appUrl}/sm/tasks/${created.id}`,
+    });
+
+    await prisma.emailLog.update({
+      where: { id: log.id },
+      data: {
+        status: result.success ? "sent" : "failed",
+        errorMsg: result.error || null,
+        ...(result.messageId ? { listmonkId: result.messageId } : {}),
+      },
+    });
+  }
+
+  await writeAudit({
+    actorId: session.user.id,
+    action: "task.create",
+    entity: "Task",
+    entityId: created.id,
+    after: created,
+    note: `Created ${created.code}`,
+  });
   return { success: true, id: created.id };
 }
