@@ -1,6 +1,3 @@
-// Strategic Control Portal — Prisma schema
-// Postgres + Prisma. Run: npx prisma db push (or migrate dev) then npm run db:seed
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -63,7 +60,6 @@ model TeamMember {
 
   taskAssignments TaskAssignment[]
   accessTokens    ExternalAccessToken[]
-  messages        TaskMessage[]
 
   @@unique([teamId, email])
   @@index([teamId])
@@ -192,7 +188,7 @@ model TaskMessage {
   taskId      String
   task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
   authorId    String
-  author      TeamMember @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorName  String   @default("")
   authorRole  String   @default("member")
   text        String?
   audioBytes  Bytes?
@@ -201,7 +197,6 @@ model TaskMessage {
   createdAt   DateTime @default(now())
 
   @@index([taskId, createdAt])
-  @@index([authorId])
 }
 
 model Vertical {

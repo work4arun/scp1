@@ -17,7 +17,7 @@ interface Message {
   audioDurationS: number | null;
   authorId: string;
   authorRole: string;
-  author: { id: string; name: string };
+  authorName: string;
   createdAt: Date;
 }
 
@@ -130,7 +130,7 @@ export function SmTaskChat({
                     <div className={`flex ${isSM ? "justify-end" : "justify-start"}`}>
                       <div className={`max-w-[80%] rounded-lg px-3 py-2 ${isSM ? "bg-primary text-primary-foreground" : "bg-card border border-border"}`}>
                         <div className="text-[10px] font-semibold opacity-80 mb-0.5">
-                          {isSM ? "You" : msg.author.name}
+                          {isSM ? "You" : msg.authorName || "Member"}
                           {!isSM && msg.authorRole === "member" && <span className="text-[9px] ml-1 opacity-60">(Member)</span>}
                         </div>
                         {msg.text && <p className="text-sm whitespace-pre-wrap">{msg.text}</p>}

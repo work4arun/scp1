@@ -26,7 +26,8 @@ export async function sendSmMessageAction(formData: FormData) {
   await prisma.taskMessage.create({
     data: {
       taskId,
-      authorId: session.user.id, // SM/CBO user ID from User table
+      authorId: session.user.id,
+      authorName: session.user.name || "SM",
       authorRole: "sm",
       text: text || null,
       audioBytes: audioBytes || null,

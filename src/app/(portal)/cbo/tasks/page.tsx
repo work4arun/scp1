@@ -66,7 +66,7 @@ export default async function CboAllTasks({ searchParams }: { searchParams: Task
                         <td className="text-xs">{t.supportNeeded || "—"}</td>
                         <td className="text-xs">{t.intervention === "NO" ? "No" : t.intervention === "YES" ? "Yes" : "If delayed"}</td>
                         <td className="text-xs">{t.nextAction || "—"}</td>
-                        <td><ConversationButton taskId={t.id} baseUrl="/cbo" textCount={textCount} voiceCount={voiceCount} /></td>
+                        <td><ConversationButton taskId={t.id} baseUrl="/sm/tasks" textCount={textCount} voiceCount={voiceCount} /></td>
                       </tr>
                     );
                   })}
