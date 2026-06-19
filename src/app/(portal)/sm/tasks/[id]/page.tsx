@@ -31,6 +31,16 @@ export default async function TaskDetail({ params }: { params: { id: string } })
     teamName: a.member.team.name, sendEmail: a.sendEmail,
   }));
 
+  // Fetch teams for the email trigger selectors
+  const teams = await prisma.team.findMany({
+    where: { active: true },
+    orderBy: { name: "asc" },
+    include: { members: { where: { active: true }, orderBy: { sortOrder: "asc" } } },
+  });
+
+  const assignedTeamIds = task.teamAssignments.map((ta) => ta.teamId);
+  const assignedMemberIds = task.assignees.map((a) => a.memberId);
+
   return (
     <div className="space-y-6 animate-fade-in">
       <PageHeader
@@ -44,7 +54,18 @@ export default async function TaskDetail({ params }: { params: { id: string } })
         {task.frequency ? <Badge variant="info">{task.frequency}</Badge> : null}
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2"><CardHeader><CardTitle>Add Status Update</CardTitle></CardHeader><CardContent><TaskUpdateForm taskId={task.id} currentStatus={task.status} /></CardContent></Card>
+        <Card className="lg:col-span-2">
+          <CardHeader><CardTitle>Add Status Update</CardTitle></CardHeader>
+          <CardContent>
+            <TaskUpdateForm
+              taskId={task.id}
+              currentStatus={task.status}
+              teams={teams.map((t) => ({ id: t.id, name: t.name, members: t.members.map((m) => ({ id: m.id, name: m.name, email: m.email, designation: m.designation })) }))}
+              assignedTeamIds={assignedTeamIds}
+              assignedMemberIds={assignedMemberIds}
+            />
+          </CardContent>
+        </Card>
         <Card><CardHeader><CardTitle>Details</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm">
             <Detail label="Teams" value={assignedTeamNames.length > 0 ? assignedTeamNames.join(", ") : "—"} />

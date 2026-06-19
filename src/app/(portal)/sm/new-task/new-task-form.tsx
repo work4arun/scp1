@@ -19,25 +19,49 @@ export function NewTaskForm({ verticals, priorities, teams }: { verticals: Verti
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  // ── Assignment (To) ───────────────────────────────────────────────────
   const [selectedTeamIds, setSelectedTeamIds] = useState<Set<string>>(new Set());
   const [teamEmailFlags, setTeamEmailFlags] = useState<Map<string, boolean>>(new Map());
   const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set());
   const [memberEmailFlags, setMemberEmailFlags] = useState<Map<string, boolean>>(new Map());
 
+  // ── CC ─────────────────────────────────────────────────────────────────
+  const [ccTeamIds, setCcTeamIds] = useState<Set<string>>(new Set());
+  const [ccMemberIds, setCcMemberIds] = useState<Set<string>>(new Set());
+
+  // ── BCC ────────────────────────────────────────────────────────────────
+  const [bccTeamIds, setBccTeamIds] = useState<Set<string>>(new Set());
+  const [bccMemberIds, setBccMemberIds] = useState<Set<string>>(new Set());
+
+  // ── Search state ───────────────────────────────────────────────────────
   const [teamSearch, setTeamSearch] = useState(""); const [teamDropdownOpen, setTeamDropdownOpen] = useState(false);
   const [memberSearch, setMemberSearch] = useState(""); const [memberDropdownOpen, setMemberDropdownOpen] = useState(false);
+  const [ccTeamSearch, setCcTeamSearch] = useState(""); const [ccTeamOpen, setCcTeamOpen] = useState(false);
+  const [ccMemberSearch, setCcMemberSearch] = useState(""); const [ccMemberOpen, setCcMemberOpen] = useState(false);
+  const [bccTeamSearch, setBccTeamSearch] = useState(""); const [bccTeamOpen, setBccTeamOpen] = useState(false);
+  const [bccMemberSearch, setBccMemberSearch] = useState(""); const [bccMemberOpen, setBccMemberOpen] = useState(false);
+
+  // ── Extra message ──────────────────────────────────────────────────────
+  const [extraMessage, setExtraMessage] = useState("");
 
   const allMembers = useMemo(() => teams.flatMap((t) => t.members.map((m) => ({ ...m, teamName: t.name }))), [teams]);
 
-  const filteredTeams = useMemo(() => { if (!teamSearch) return teams; const q = teamSearch.toLowerCase(); return teams.filter((t) => t.name.toLowerCase().includes(q)); }, [teams, teamSearch]);
-  const filteredMembers = useMemo(() => { if (!memberSearch) return allMembers; const q = memberSearch.toLowerCase(); return allMembers.filter((m) => m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q) || m.teamName.toLowerCase().includes(q)); }, [allMembers, memberSearch]);
+  // ── Filter helpers ─────────────────────────────────────────────────────
+  const filterTeams = (q: string) => q ? teams.filter((t) => t.name.toLowerCase().includes(q.toLowerCase())) : teams;
+  const filterMembers = (q: string) => q ? allMembers.filter((m) => m.name.toLowerCase().includes(q.toLowerCase()) || m.email.toLowerCase().includes(q.toLowerCase()) || m.teamName.toLowerCase().includes(q.toLowerCase())) : allMembers;
 
-  const selectTeam = (id: string) => { setSelectedTeamIds((prev) => new Set(prev).add(id)); setTeamEmailFlags((prev) => new Map(prev).set(id, true)); setTeamSearch(""); setTeamDropdownOpen(false); };
-  const removeTeam = (id: string) => { setSelectedTeamIds((prev) => { const n = new Set(prev); n.delete(id); return n; }); setTeamEmailFlags((prev) => { const m = new Map(prev); m.delete(id); return m; }); };
+  // ── Selection helpers ──────────────────────────────────────────────────
+  const selectTeam = (set: typeof setSelectedTeamIds, id: string) => { set((prev) => new Set(prev).add(id)); setTeamEmailFlags((prev) => new Map(prev).set(id, true)); setTeamSearch(""); setTeamDropdownOpen(false); };
+  const removeTeam = (set: typeof setSelectedTeamIds, id: string) => { set((prev) => { const n = new Set(prev); n.delete(id); return n; }); setTeamEmailFlags((prev) => { const m = new Map(prev); m.delete(id); return m; }); };
   const toggleTeamEmail = (id: string) => setTeamEmailFlags((prev) => new Map(prev).set(id, !(prev.get(id) ?? true)));
-  const selectMember = (id: string) => { setSelectedMemberIds((prev) => new Set(prev).add(id)); setMemberEmailFlags((prev) => new Map(prev).set(id, true)); setMemberSearch(""); setMemberDropdownOpen(false); };
-  const removeMember = (id: string) => { setSelectedMemberIds((prev) => { const n = new Set(prev); n.delete(id); return n; }); setMemberEmailFlags((prev) => { const m = new Map(prev); m.delete(id); return m; }); };
+  const selectMember = (set: typeof setSelectedMemberIds, id: string) => { set((prev) => new Set(prev).add(id)); setMemberEmailFlags((prev) => new Map(prev).set(id, true)); setMemberSearch(""); setMemberDropdownOpen(false); };
+  const removeMember = (set: typeof setSelectedMemberIds, id: string) => { set((prev) => { const n = new Set(prev); n.delete(id); return n; }); setMemberEmailFlags((prev) => { const m = new Map(prev); m.delete(id); return m; }); };
   const toggleMemberEmail = (id: string) => setMemberEmailFlags((prev) => new Map(prev).set(id, !(prev.get(id) ?? true)));
+
+  // Simple select/deselect for CC/BCC (no email toggle needed — always sends)
+  const toggleSetItem = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, id: string) => {
+    setter((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  };
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); setError(null);
@@ -46,6 +70,11 @@ export function NewTaskForm({ verticals, priorities, teams }: { verticals: Verti
     for (const tid of selectedTeamIds) form.set(`teamsend_${tid}`, String(teamEmailFlags.get(tid) ?? true));
     form.set("memberIds", Array.from(selectedMemberIds).join(","));
     for (const mid of selectedMemberIds) form.set(`membersend_${mid}`, String(memberEmailFlags.get(mid) ?? true));
+    form.set("ccTeamIds", Array.from(ccTeamIds).join(","));
+    form.set("ccMemberIds", Array.from(ccMemberIds).join(","));
+    form.set("bccTeamIds", Array.from(bccTeamIds).join(","));
+    form.set("bccMemberIds", Array.from(bccMemberIds).join(","));
+    form.set("extraMessage", extraMessage);
     startTransition(async () => {
       try {
         const result = await createTaskAction(form);
@@ -67,58 +96,71 @@ export function NewTaskForm({ verticals, priorities, teams }: { verticals: Verti
         <Field label="Source" htmlFor="source"><Select id="source" name="source"><option value="SELF_STRATEGY">Self Strategy</option><option value="BOSS_INSTRUCTION">Boss Instruction</option><option value="WHATSAPP_GROUP">WhatsApp Group</option><option value="MANAGEMENT_MEETING">Management Meeting</option><option value="DEPARTMENT_MEETING">Department Meeting</option><option value="MARKETING_REVIEW">Marketing Review</option><option value="MRM">MRM</option><option value="PLACEMENT_REVIEW">Placement Review</option><option value="RTC_REVIEW">RTC Review</option><option value="DIGITAL_REVIEW">Digital Review</option><option value="NEW_IDEA">New Idea</option></Select></Field>
       </div>
 
-      {/* Assignment */}
-      <div className="rounded-lg border border-border p-3 space-y-4">
-        <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Assignment</div>
-        <div>
-          <Label className="text-xs text-muted-foreground">Select teams</Label>
-          <div className="relative mt-1"><Input value={teamSearch} onChange={(e) => { setTeamSearch(e.target.value); setTeamDropdownOpen(true); }} onFocus={() => setTeamDropdownOpen(true)} onBlur={() => setTimeout(() => setTeamDropdownOpen(false), 200)} placeholder="Search teams…" className="h-8 text-xs flex-1" />
-            {teamDropdownOpen && (teamSearch || filteredTeams.length > 0) && (
-              <div className="absolute z-10 mt-1 w-full max-h-36 overflow-y-auto rounded-md border border-border bg-card shadow-lg">
-                {filteredTeams.map((t) => <button key={t.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => selectTeam(t.id)} className="w-full px-3 py-2 text-left text-xs hover:bg-accent">{t.name} ({t.members.length} members)</button>)}
-              </div>
-            )}
-          </div>
-          {selectedTeamIds.size > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {teams.filter((t) => selectedTeamIds.has(t.id)).map((t) => {
-                const sendEmail = teamEmailFlags.get(t.id) ?? true;
-                return (
-                  <div key={t.id} className="inline-flex items-center gap-1 rounded-md border border-primary bg-primary/10 px-2 py-1 text-xs text-primary font-medium">
-                    <span>{t.name} ({t.members.length})</span>
-                    <button type="button" onClick={() => toggleTeamEmail(t.id)} className={`ml-1 inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] ${sendEmail ? "bg-success/20 text-success" : "bg-muted text-muted-foreground"}`}><Mail className="h-2.5 w-2.5" /> {sendEmail ? "Email" : "No"}</button>
-                    <button type="button" onClick={() => removeTeam(t.id)} className="ml-0.5 rounded p-0.5 hover:bg-primary/20"><X className="h-3 w-3" /></button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-        <div>
-          <Label className="text-xs text-muted-foreground">Or select individual members</Label>
-          <div className="relative mt-1"><Input value={memberSearch} onChange={(e) => { setMemberSearch(e.target.value); setMemberDropdownOpen(true); }} onFocus={() => setMemberDropdownOpen(true)} onBlur={() => setTimeout(() => setMemberDropdownOpen(false), 200)} placeholder="Search members…" className="h-8 text-xs" />
-            {memberDropdownOpen && (memberSearch || filteredMembers.length > 0) && (
-              <div className="absolute z-10 mt-1 w-full max-h-44 overflow-y-auto rounded-md border border-border bg-card shadow-lg">
-                {filteredMembers.map((m) => <button key={m.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => selectMember(m.id)} className="w-full px-3 py-2 text-left text-xs hover:bg-accent flex items-center justify-between"><span>{m.name}{m.designation && <span className="text-muted-foreground ml-1">({m.designation})</span>}</span><span className="text-muted-foreground text-[10px]">{m.teamName}</span></button>)}
-              </div>
-            )}
-          </div>
-          {selectedMemberIds.size > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {allMembers.filter((m) => selectedMemberIds.has(m.id)).map((m) => {
-                const sendEmail = memberEmailFlags.get(m.id) ?? true;
-                return (
-                  <div key={m.id} className="inline-flex items-center gap-1 rounded-md border border-primary bg-primary/10 px-2 py-1 text-xs text-primary font-medium">
-                    <span>{m.name}{m.designation ? ` (${m.designation})` : ""}</span><span className="text-[10px] opacity-50">{m.teamName}</span>
-                    <button type="button" onClick={() => toggleMemberEmail(m.id)} className={`ml-1 inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] ${sendEmail ? "bg-success/20 text-success" : "bg-muted text-muted-foreground"}`}><Mail className="h-2.5 w-2.5" /> {sendEmail ? "Email" : "No"}</button>
-                    <button type="button" onClick={() => removeMember(m.id)} className="ml-0.5 rounded p-0.5 hover:bg-primary/20"><X className="h-3 w-3" /></button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
+      {/* Extra message */}
+      <Field label="Email message (optional)" htmlFor="extraMessage">
+        <Textarea id="extraMessage" name="extraMessage" value={extraMessage} onChange={(e) => setExtraMessage(e.target.value)} placeholder="Additional instructions for the email notification…" className="min-h-[80px]" />
+      </Field>
+
+      {/* Assignment (To) */}
+      <Section label="Assignment (To)">
+        <SearchableSelect
+          placeholder="Search teams…"
+          search={teamSearch} setSearch={setTeamSearch} open={teamDropdownOpen} setOpen={setTeamDropdownOpen}
+          items={filterTeams(teamSearch).map((t) => ({ id: t.id, label: `${t.name} (${t.members.length} members)` }))}
+          onSelect={(id) => selectTeam(setSelectedTeamIds, id)}
+        />
+        <SelectedChips teams={teams} ids={selectedTeamIds} allMembers={allMembers} memberIds={selectedMemberIds}
+          teamEmailFlags={teamEmailFlags} memberEmailFlags={memberEmailFlags}
+          onToggleTeam={toggleTeamEmail} onRemoveTeam={(id) => removeTeam(setSelectedTeamIds, id)}
+          onToggleMember={toggleMemberEmail} onRemoveMember={(id) => removeMember(setSelectedMemberIds, id)}
+        />
+        <SearchableSelect
+          placeholder="Search individual members…"
+          search={memberSearch} setSearch={setMemberSearch} open={memberDropdownOpen} setOpen={setMemberDropdownOpen}
+          items={filterMembers(memberSearch).map((m) => ({ id: m.id, label: `${m.name}${m.designation ? ` (${m.designation})` : ""}`, sub: m.teamName }))}
+          onSelect={(id) => selectMember(setSelectedMemberIds, id)}
+        />
+      </Section>
+
+      {/* CC */}
+      <Section label="CC">
+        <SearchableSelect
+          placeholder="Search CC teams…"
+          search={ccTeamSearch} setSearch={setCcTeamSearch} open={ccTeamOpen} setOpen={setCcTeamOpen}
+          items={filterTeams(ccTeamSearch).map((t) => ({ id: t.id, label: `${t.name} (${t.members.length} members)` }))}
+          onSelect={(id) => toggleSetItem(setCcTeamIds, id)}
+        />
+        <CcBccChips teams={teams} ids={ccTeamIds} allMembers={allMembers} memberIds={ccMemberIds}
+          onRemoveTeam={(id) => toggleSetItem(setCcTeamIds, id)}
+          onRemoveMember={(id) => toggleSetItem(setCcMemberIds, id)}
+        />
+        <SearchableSelect
+          placeholder="Search CC members…"
+          search={ccMemberSearch} setSearch={setCcMemberSearch} open={ccMemberOpen} setOpen={setCcMemberOpen}
+          items={filterMembers(ccMemberSearch).map((m) => ({ id: m.id, label: `${m.name}${m.designation ? ` (${m.designation})` : ""}`, sub: m.teamName }))}
+          onSelect={(id) => toggleSetItem(setCcMemberIds, id)}
+        />
+      </Section>
+
+      {/* BCC */}
+      <Section label="BCC">
+        <SearchableSelect
+          placeholder="Search BCC teams…"
+          search={bccTeamSearch} setSearch={setBccTeamSearch} open={bccTeamOpen} setOpen={setBccTeamOpen}
+          items={filterTeams(bccTeamSearch).map((t) => ({ id: t.id, label: `${t.name} (${t.members.length} members)` }))}
+          onSelect={(id) => toggleSetItem(setBccTeamIds, id)}
+        />
+        <CcBccChips teams={teams} ids={bccTeamIds} allMembers={allMembers} memberIds={bccMemberIds}
+          onRemoveTeam={(id) => toggleSetItem(setBccTeamIds, id)}
+          onRemoveMember={(id) => toggleSetItem(setBccMemberIds, id)}
+        />
+        <SearchableSelect
+          placeholder="Search BCC members…"
+          search={bccMemberSearch} setSearch={setBccMemberSearch} open={bccMemberOpen} setOpen={setBccMemberOpen}
+          items={filterMembers(bccMemberSearch).map((m) => ({ id: m.id, label: `${m.name}${m.designation ? ` (${m.designation})` : ""}`, sub: m.teamName }))}
+          onSelect={(id) => toggleSetItem(setBccMemberIds, id)}
+        />
+      </Section>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Field label="Deadline" htmlFor="deadline"><Input id="deadline" name="deadline" type="datetime-local" /></Field>
@@ -131,13 +173,87 @@ export function NewTaskForm({ verticals, priorities, teams }: { verticals: Verti
       <Field label="Dr. BN intervention" htmlFor="intervention"><Select id="intervention" name="intervention" defaultValue="NO"><option value="NO">No</option><option value="YES">Yes</option><option value="ONLY_IF_DELAYED">Only if delayed</option></Select></Field>
 
       <div className="flex justify-end gap-2 pt-2">
-        <Button type="reset" variant="outline" onClick={() => { setError(null); setSelectedTeamIds(new Set()); setSelectedMemberIds(new Set()); setTeamEmailFlags(new Map()); setMemberEmailFlags(new Map()); }}>Reset</Button>
+        <Button type="reset" variant="outline" onClick={() => { setError(null); setSelectedTeamIds(new Set()); setSelectedMemberIds(new Set()); setCcTeamIds(new Set()); setCcMemberIds(new Set()); setBccTeamIds(new Set()); setBccMemberIds(new Set()); setExtraMessage(""); }}>Reset</Button>
         <Button type="submit" disabled={pending}>{pending ? "Saving…" : "Add to register"}</Button>
       </div>
     </form>
   );
 }
 
+// ── Shared helpers ─────────────────────────────────────────────────────────
+
 function Field({ label, htmlFor, children }: { label: string; htmlFor: string; children: React.ReactNode }) {
   return <div className="space-y-1.5"><Label htmlFor={htmlFor}>{label}</Label>{children}</div>;
+}
+
+function Section({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div className="rounded-lg border border-border p-3 space-y-3">
+    <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{label}</div>
+    {children}
+  </div>;
+}
+
+function SearchableSelect({ placeholder, search, setSearch, open, setOpen, items, onSelect }: {
+  placeholder: string;
+  search: string; setSearch: (v: string) => void;
+  open: boolean; setOpen: (v: boolean) => void;
+  items: { id: string; label: string; sub?: string }[];
+  onSelect: (id: string) => void;
+}) {
+  return <div className="relative">
+    <Input value={search} onChange={(e) => { setSearch(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 200)} placeholder={placeholder} className="h-8 text-xs" />
+    {open && (search || items.length > 0) && (
+      <div className="absolute z-10 mt-1 w-full max-h-44 overflow-y-auto rounded-md border border-border bg-card shadow-lg">
+        {items.map((item) => (
+          <button key={item.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => onSelect(item.id)} className="w-full px-3 py-2 text-left text-xs hover:bg-accent flex items-center justify-between">
+            <span>{item.label}</span>
+            {item.sub && <span className="text-muted-foreground text-[10px]">{item.sub}</span>}
+          </button>
+        ))}
+      </div>
+    )}
+  </div>;
+}
+
+function SelectedChips({ teams, ids, allMembers, memberIds, teamEmailFlags, memberEmailFlags, onToggleTeam, onRemoveTeam, onToggleMember, onRemoveMember }: any) {
+  const selectedTeams = teams.filter((t: any) => ids.has(t.id));
+  const selectedMembers = allMembers.filter((m: any) => memberIds.has(m.id));
+  return (ids.size > 0 || memberIds.size > 0) ? (
+    <div className="flex flex-wrap gap-1.5">
+      {selectedTeams.map((t: any) => {
+        const send = teamEmailFlags.get(t.id) ?? true;
+        return <Chip key={t.id} label={`${t.name} (${t.members.length})`} badge={send ? <><Mail className="h-2.5 w-2.5" /> Email</> : "No"} badgeActive={send} onBadge={() => onToggleTeam(t.id)} onRemove={() => onRemoveTeam(t.id)} />;
+      })}
+      {selectedMembers.map((m: any) => {
+        const send = memberEmailFlags.get(m.id) ?? true;
+        return <Chip key={m.id} label={`${m.name}${m.designation ? ` (${m.designation})` : ""}`} sub={m.teamName} badge={send ? <><Mail className="h-2.5 w-2.5" /> Email</> : "No"} badgeActive={send} onBadge={() => onToggleMember(m.id)} onRemove={() => onRemoveMember(m.id)} />;
+      })}
+    </div>
+  ) : null;
+}
+
+function CcBccChips({ teams, ids, allMembers, memberIds, onRemoveTeam, onRemoveMember }: any) {
+  const selectedTeams = teams.filter((t: any) => ids.has(t.id));
+  const selectedMembers = allMembers.filter((m: any) => memberIds.has(m.id));
+  return (ids.size > 0 || memberIds.size > 0) ? (
+    <div className="flex flex-wrap gap-1.5">
+      {selectedTeams.map((t: any) => <ChipSimple key={t.id} label={`${t.name} (${t.members.length})`} onRemove={() => onRemoveTeam(t.id)} />)}
+      {selectedMembers.map((m: any) => <ChipSimple key={m.id} label={m.name} sub={m.teamName} onRemove={() => onRemoveMember(m.id)} />)}
+    </div>
+  ) : null;
+}
+
+function Chip({ label, sub, badge, badgeActive, onBadge, onRemove }: { label: string; sub?: string; badge: React.ReactNode; badgeActive: boolean; onBadge: () => void; onRemove: () => void }) {
+  return <div className="inline-flex items-center gap-1 rounded-md border border-primary bg-primary/10 px-2 py-1 text-xs text-primary font-medium">
+    <span>{label}{sub ? <span className="text-[10px] opacity-50 ml-0.5">{sub}</span> : null}</span>
+    <button type="button" onClick={onBadge} className={`ml-1 inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] ${badgeActive ? "bg-success/20 text-success" : "bg-muted text-muted-foreground"}`}>{badge}</button>
+    <button type="button" onClick={onRemove} className="ml-0.5 rounded p-0.5 hover:bg-primary/20"><X className="h-3 w-3" /></button>
+  </div>;
+}
+
+function ChipSimple({ label, sub, onRemove }: { label: string; sub?: string; onRemove: () => void }) {
+  return <div className="inline-flex items-center gap-1 rounded-md border border-primary bg-primary/10 px-2 py-1 text-xs text-primary font-medium">
+    <span>{label}{sub ? <span className="text-[10px] opacity-50 ml-0.5">{sub}</span> : null}</span>
+    <button type="button" onClick={onRemove} className="ml-0.5 rounded p-0.5 hover:bg-primary/20"><X className="h-3 w-3" /></button>
+  </div>;
 }

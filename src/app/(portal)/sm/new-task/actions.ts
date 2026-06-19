@@ -14,6 +14,10 @@ export type CreateTaskResult =
   | { success: true; id: string }
   | { success: false; error: string };
 
+function parseIdList(value: string): string[] {
+  return value ? value.split(",").map((id) => id.trim()).filter(Boolean) : [];
+}
+
 export async function createTaskAction(formData: FormData): Promise<CreateTaskResult> {
   const session = await auth();
   if (!canManageTasks(session?.user.systemRole) || !session?.user.id) {
@@ -30,17 +34,20 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
   const supportNeeded  = (formData.get("supportNeeded") as string) || null;
   const nextAction     = (formData.get("nextAction") as string) || null;
   const intervention   = ((formData.get("intervention") as string) || "NO") as InterventionFlag;
+  const extraMessage   = (formData.get("extraMessage") as string) || "";
 
-  const teamIdsRaw = (formData.get("teamIds") as string) || "";
-  const teamIds = teamIdsRaw ? teamIdsRaw.split(",").map((id) => id.trim()).filter(Boolean) : [];
+  const teamIds = parseIdList(String(formData.get("teamIds") || ""));
+  const memberIds = parseIdList(String(formData.get("memberIds") || ""));
+  const ccTeamIds = parseIdList(String(formData.get("ccTeamIds") || ""));
+  const ccMemberIds = parseIdList(String(formData.get("ccMemberIds") || ""));
+  const bccTeamIds = parseIdList(String(formData.get("bccTeamIds") || ""));
+  const bccMemberIds = parseIdList(String(formData.get("bccMemberIds") || ""));
+
   const teamSendEmailMap = new Map<string, boolean>();
   for (const tid of teamIds) {
     const sendVal = formData.get(`teamsend_${tid}`);
     teamSendEmailMap.set(tid, sendVal !== "false");
   }
-
-  const memberIdsRaw = (formData.get("memberIds") as string) || "";
-  const memberIds = memberIdsRaw ? memberIdsRaw.split(",").map((id) => id.trim()).filter(Boolean) : [];
   const memberSendEmailMap = new Map<string, boolean>();
   for (const mid of memberIds) {
     const sendVal = formData.get(`membersend_${mid}`);
@@ -104,88 +111,77 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
 
   revalidatePath("/sm"); revalidatePath("/sm/tasks"); revalidatePath("/cbo");
 
-  // ── Send notification emails via Nodemailer ──────────────────────────
-  const recipients: { email: string; name: string }[] = [];
-
-  if (teamIds.length > 0) {
-    const teamMembers = await prisma.teamMember.findMany({
-      where: { teamId: { in: teamIds }, active: true },
-      select: { name: true, email: true },
-    });
-    for (const m of teamMembers) {
-      const shouldSend = teamIds.some((tid) => teamSendEmailMap.get(tid) !== false);
-      if (shouldSend) recipients.push({ email: m.email, name: m.name });
-    }
-  }
-
-  if (memberIds.length > 0) {
-    const members = await prisma.teamMember.findMany({
-      where: { id: { in: memberIds }, active: true },
-      select: { id: true, name: true, email: true },
-    });
-    for (const m of members) {
-      if (memberSendEmailMap.get(m.id) !== false) recipients.push({ email: m.email, name: m.name });
-    }
-  }
-
+  // ── Resolve all recipients ────────────────────────────────────────────
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   const sent = new Set<string>();
-  for (const r of recipients) {
-    if (sent.has(r.email)) continue;
-    sent.add(r.email);
 
-    const subject = `[SCP] New Task: ${created.code} — ${created.title}`;
-    const html = `
-      <h2>New Task Assigned</h2>
-      <p>Hello ${r.name || "Team Member"},</p>
-      <p>A new task has been assigned to you:</p>
-      <table style="border-collapse:collapse;width:100%;max-width:600px">
-        <tr><td style="padding:6px;font-weight:bold">Task Code</td><td style="padding:6px">${created.code}</td></tr>
-        <tr><td style="padding:6px;font-weight:bold">Title</td><td style="padding:6px">${created.title}</td></tr>
-        <tr><td style="padding:6px;font-weight:bold">Priority</td><td style="padding:6px">${priorityCode}</td></tr>
-        ${deadlineStr ? `<tr><td style="padding:6px;font-weight:bold">Deadline</td><td style="padding:6px">${new Date(deadlineStr).toLocaleDateString()}</td></tr>` : ""}
-        ${expectedOutput ? `<tr><td style="padding:6px;font-weight:bold">Expected Output</td><td style="padding:6px">${expectedOutput}</td></tr>` : ""}
-      </table>
-      <p style="margin-top:16px">
-        <a href="${appUrl}/sm/tasks/${created.id}" style="background:#4f46e5;color:white;padding:10px 20px;text-decoration:none;border-radius:6px">
-          View Task
-        </a>
-      </p>
-    `;
-
-    const log = await prisma.emailLog.create({
-      data: {
-        taskId: created.id,
-        recipient: r.email,
-        subject,
-        status: "pending",
-      },
+  // Resolve member emails from team IDs (for TO, CC, BCC)
+  const membersOf = async (tids: string[]): Promise<{ id: string; name: string; email: string }[]> => {
+    if (tids.length === 0) return [];
+    return prisma.teamMember.findMany({
+      where: { teamId: { in: tids }, active: true },
+      select: { id: true, name: true, email: true },
     });
-
-    const result = await sendEmail({
-      to: r.email,
-      subject,
-      html,
-      text: `New task: ${created.code} — ${created.title}\nPriority: ${priorityCode}${deadlineStr ? `\nDeadline: ${new Date(deadlineStr).toLocaleDateString()}` : ""}\nView: ${appUrl}/sm/tasks/${created.id}`,
+  };
+  const membersById = async (mids: string[]): Promise<{ id: string; name: string; email: string }[]> => {
+    if (mids.length === 0) return [];
+    return prisma.teamMember.findMany({
+      where: { id: { in: mids }, active: true },
+      select: { id: true, name: true, email: true },
     });
+  };
 
-    await prisma.emailLog.update({
-      where: { id: log.id },
-      data: {
-        status: result.success ? "sent" : "failed",
-        errorMsg: result.error || null,
-        ...(result.messageId ? { listmonkId: result.messageId } : {}),
-      },
-    });
+  const toMembers: { email: string; name: string }[] = [];
+  for (const m of await membersOf(teamIds)) {
+    const shouldSend = teamIds.some((tid) => teamSendEmailMap.get(tid) !== false);
+    if (shouldSend) toMembers.push({ email: m.email, name: m.name });
+  }
+  for (const m of await membersById(memberIds)) {
+    if (memberSendEmailMap.get(m.id) !== false) toMembers.push({ email: m.email, name: m.name });
   }
 
-  await writeAudit({
-    actorId: session.user.id,
-    action: "task.create",
-    entity: "Task",
-    entityId: created.id,
-    after: created,
-    note: `Created ${created.code}`,
-  });
+  // CC recipients
+  const ccAll: { email: string; name: string }[] = [];
+  for (const m of await membersOf(ccTeamIds)) ccAll.push({ email: m.email, name: m.name });
+  for (const m of await membersById(ccMemberIds)) ccAll.push({ email: m.email, name: m.name });
+
+  // BCC recipients
+  const bccAll: { email: string; name: string }[] = [];
+  for (const m of await membersOf(bccTeamIds)) bccAll.push({ email: m.email, name: m.name });
+  for (const m of await membersById(bccMemberIds)) bccAll.push({ email: m.email, name: m.name });
+
+  const toEmails = toMembers.map((m) => m.email);
+  const ccEmails = ccAll.map((m) => m.email);
+  const bccEmails = bccAll.map((m) => m.email);
+
+  // Build email
+  const subject = `[SCP] New Task: ${created.code} — ${created.title}`;
+  const html = `
+    <h2>New Task Assigned</h2>
+    <p>The following task has been created:</p>
+    <table style="border-collapse:collapse;width:100%;max-width:600px">
+      <tr><td style="padding:6px;font-weight:bold">Task Code</td><td style="padding:6px">${created.code}</td></tr>
+      <tr><td style="padding:6px;font-weight:bold">Title</td><td style="padding:6px">${created.title}</td></tr>
+      <tr><td style="padding:6px;font-weight:bold">Priority</td><td style="padding:6px">${priorityCode}</td></tr>
+      ${deadlineStr ? `<tr><td style="padding:6px;font-weight:bold">Deadline</td><td style="padding:6px">${new Date(deadlineStr).toLocaleDateString()}</td></tr>` : ""}
+      ${expectedOutput ? `<tr><td style="padding:6px;font-weight:bold">Expected Output</td><td style="padding:6px">${expectedOutput}</td></tr>` : ""}
+    </table>
+    ${extraMessage ? `<div style="margin-top:12px;padding:10px;background:#f3f4f6;border-radius:6px;font-style:italic">${extraMessage.replace(/\n/g, "<br>")}</div>` : ""}
+    <p style="margin-top:16px">
+      <a href="${appUrl}/sm/tasks/${created.id}" style="background:#4f46e5;color:white;padding:10px 20px;text-decoration:none;border-radius:6px">
+        View Task
+      </a>
+    </p>
+  `;
+
+  if (toEmails.length > 0) {
+    const result = await sendEmail({ to: toEmails, cc: ccEmails, bcc: bccEmails, subject, html });
+    for (const e of toEmails) {
+      sent.add(e);
+      await prisma.emailLog.create({ data: { taskId: created.id, recipient: e, subject, status: result.success ? "sent" : "failed", errorMsg: result.error || null, ...(result.messageId ? { listmonkId: result.messageId } : {}) } });
+    }
+  }
+
+  await writeAudit({ actorId: session.user.id, action: "task.create", entity: "Task", entityId: created.id, after: created, note: `Created ${created.code}` });
   return { success: true, id: created.id };
 }
