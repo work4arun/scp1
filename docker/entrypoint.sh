@@ -28,19 +28,32 @@ echo "[scp] Ensuring 'listmonk' database exists..."
 npx --no-install prisma db execute --stdin >/dev/null 2>&1 <<'SQL' || true
 CREATE DATABASE listmonk;
 SQL
+echo "[scp] Ensuring 'stalwart' database exists..."
+npx --no-install prisma db execute --stdin >/dev/null 2>&1 <<'SQL' || true
+CREATE DATABASE stalwart;
+SQL
 
-# ── Apply Prisma schema ──
+# ── Apply Prisma schema (SAFE — never drop data) ──
 echo "[scp] Applying Prisma schema..."
 if [ -d "prisma/migrations" ] && [ "$(ls -A prisma/migrations 2>/dev/null)" ]; then
   npx prisma migrate deploy
 else
-  npx prisma db push --accept-data-loss
+  # Use plain db push WITHOUT --accept-data-loss.
+  # If the schema drifted too far, Prisma will ERROR (not silently drop tables).
+  # Fix the schema mismatch manually rather than nuking production data.
+  npx prisma db push
 fi
 
-# ── Seed ──
-if [ "${SCP_SEED:-1}" = "1" ]; then
-  echo "[scp] SCP_SEED=1 -> running seed..."
-  npm run db:seed || echo "[scp] Seed step finished with non-zero exit; continuing."
+# ── Seed (only if database is empty) ──
+if [ "${SCP_SEED:-0}" = "1" ]; then
+  echo "[scp] Checking if database is already seeded..."
+  SEEDED=$(echo "SELECT COUNT(*) FROM \"User\";" | npx --no-install prisma db execute --stdin 2>/dev/null | tail -1 | tr -d ' ')
+  if [ "${SEEDED:-0}" = "0" ]; then
+    echo "[scp] Database is empty — running seed..."
+    npm run db:seed || echo "[scp] Seed step finished with non-zero exit; continuing."
+  else
+    echo "[scp] Database already has ${SEEDED} user(s) — skipping seed to preserve data."
+  fi
 else
   echo "[scp] SCP_SEED=0 -> skipping seed."
 fi

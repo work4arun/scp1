@@ -1,8 +1,9 @@
 # Strategic Control Portal — production stack with SSL
-# Services: db (Postgres 16), app (Next.js), listmonk (email), nginx (SSL proxy)
-# Nginx handles SSL termination for both domains:
+# Services: db (Postgres 16), app (Next.js), listmonk (email), stalwart (email server), nginx (SSL proxy)
+# Nginx handles SSL termination for all domains:
 #   - rtc.systitsoft.in → app:3000
 #   - listmonk.systitsoft.in → listmonk:9000
+#   - mail_server.systitsoft.in → stalwart:8080
 
 services:
   db:
@@ -45,7 +46,7 @@ services:
       LISTMONK_URL: ${LISTMONK_URL:-https://listmonk.systitsoft.in}
       LISTMONK_API_USER: ${LISTMONK_API_USER:-admin}
       LISTMONK_API_PASSWORD: ${LISTMONK_API_PASSWORD:-listmonk}
-      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_HOST: ${SMTP_HOST:-mail_server}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-false}
       SMTP_USER: ${SMTP_USER:-}
@@ -86,6 +87,26 @@ services:
     networks:
       - scp_net
 
+  stalwart:
+    image: stalwartlabs/mail-server:latest
+    container_name: scp-stalwart
+    restart: unless-stopped
+    ports:
+      - "25:25"        # SMTP
+      - "143:143"      # IMAP
+      - "587:587"      # SMTP Submission
+      - "993:993"      # IMAPS
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_TYPE: postgresql
+      DB_URL: "postgresql://${POSTGRES_USER:-scp_user1}:${POSTGRES_PASSWORD}@db:5432/stalwart"
+    volumes:
+      - stalwart_data:/opt/stalwart-mail
+    networks:
+      - scp_net
+
   nginx:
     image: nginx:alpine
     container_name: scp-nginx
@@ -99,6 +120,7 @@ services:
     depends_on:
       - app
       - listmonk
+      - stalwart
     networks:
       - scp_net
 
@@ -107,6 +129,8 @@ volumes:
     name: scp_pgdata
   listmonk_uploads:
     name: listmonk_uploads
+  stalwart_data:
+    name: stalwart_data
 
 networks:
   scp_net:
