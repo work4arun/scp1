@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { canManageTasks } from "@/lib/rbac";
 import { sendEmail } from "@/lib/email";
+import type { InterventionFlag } from "@prisma/client";
 
 type TriggerEmailParams = {
   taskId: string;
@@ -18,6 +19,17 @@ type TriggerEmailParams = {
 
 type TriggerEmailResult = { success: true } | { success: false; error: string };
 
+function interventionColor(flag: InterventionFlag) {
+  if (flag === "YES") return "#dc2626";
+  if (flag === "ONLY_IF_DELAYED") return "#2563eb";
+  return "#16a34a";
+}
+function interventionLabel(flag: InterventionFlag) {
+  if (flag === "YES") return "Yes";
+  if (flag === "ONLY_IF_DELAYED") return "Only if delayed";
+  return "No";
+}
+
 export async function triggerEmailAction(params: TriggerEmailParams): Promise<TriggerEmailResult> {
   const session = await auth();
   if (!canManageTasks(session?.user.systemRole) || !session?.user.id) {
@@ -26,7 +38,12 @@ export async function triggerEmailAction(params: TriggerEmailParams): Promise<Tr
 
   const task = await prisma.task.findUnique({
     where: { id: params.taskId },
-    select: { code: true, title: true, priority: { select: { code: true } } },
+    select: {
+      code: true, title: true,
+      priority: { select: { code: true, label: true, colorHex: true } },
+      deadline: true, expectedOutput: true, intervention: true,
+      status: true,
+    },
   });
   if (!task) return { success: false, error: "Task not found." };
 
@@ -52,18 +69,26 @@ export async function triggerEmailAction(params: TriggerEmailParams): Promise<Tr
   const bccMembers = [...(await membersOf(params.bccTeamIds)), ...(await membersById(params.bccMemberIds))];
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const priorityDisplay = `${task.priority.code} — ${task.priority.label}`;
+
   const subject = `[SCP] Update: ${task.code} — ${task.title}`;
   const html = `
-    <h2>Task Update</h2>
-    <p>The task <strong>${task.code}</strong> — <strong>${task.title}</strong> has been updated.</p>
-    <table style="border-collapse:collapse;width:100%;max-width:600px">
-      <tr><td style="padding:6px;font-weight:bold">Task Code</td><td style="padding:6px">${task.code}</td></tr>
-      <tr><td style="padding:6px;font-weight:bold">Title</td><td style="padding:6px">${task.title}</td></tr>
-      <tr><td style="padding:6px;font-weight:bold">Priority</td><td style="padding:6px">${task.priority.code}</td></tr>
+    <h2 style="margin-bottom:12px">Task Update</h2>
+    <p style="margin-bottom:16px;color:#374151">The task <strong>${task.code}</strong> — <strong>${task.title}</strong> has been updated.</p>
+    <table style="border-collapse:collapse;width:100%;max-width:600px;font-size:14px">
+      <tr><td style="padding:8px 10px;font-weight:bold;width:140px;background:#f9fafb;border:1px solid #e5e7eb">Task Code</td><td style="padding:8px 10px;border:1px solid #e5e7eb"><strong>${task.code}</strong></td></tr>
+      <tr><td style="padding:8px 10px;font-weight:bold;background:#f9fafb;border:1px solid #e5e7eb">Title</td><td style="padding:8px 10px;border:1px solid #e5e7eb">${task.title}</td></tr>
+      <tr><td style="padding:8px 10px;font-weight:bold;background:#f9fafb;border:1px solid #e5e7eb">Priority</td><td style="padding:8px 10px;border:1px solid #e5e7eb"><span style="display:inline-block;padding:2px 10px;border-radius:4px;background:${task.priority.colorHex || '#6b7280'};color:#fff;font-weight:600;font-size:13px">${priorityDisplay}</span></td></tr>
+      <tr><td style="padding:8px 10px;font-weight:bold;background:#f9fafb;border:1px solid #e5e7eb">Status</td><td style="padding:8px 10px;border:1px solid #e5e7eb">${task.status.replace(/_/g, " ")}</td></tr>
+      ${task.deadline ? `<tr><td style="padding:8px 10px;font-weight:bold;background:#f9fafb;border:1px solid #e5e7eb">Deadline</td><td style="padding:8px 10px;border:1px solid #e5e7eb">${new Date(task.deadline).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td></tr>` : ""}
+      ${task.expectedOutput ? `<tr><td style="padding:8px 10px;font-weight:bold;background:#f9fafb;border:1px solid #e5e7eb">Expected Output</td><td style="padding:8px 10px;border:1px solid #e5e7eb">${task.expectedOutput}</td></tr>` : ""}
+      <tr><td style="padding:8px 10px;font-weight:bold;background:#f9fafb;border:1px solid #e5e7eb">Dr. BN Intervention</td><td style="padding:8px 10px;border:1px solid #e5e7eb"><span style="font-weight:700;color:${interventionColor(task.intervention)}">${interventionLabel(task.intervention)}</span></td></tr>
     </table>
-    ${params.note ? `<div style="margin-top:12px;padding:10px;background:#f3f4f6;border-radius:6px;font-style:italic">${params.note.replace(/\n/g, "<br>")}</div>` : ""}
-    <p style="margin-top:16px">
-      <a href="${appUrl}/sm/tasks/${params.taskId}" style="background:#4f46e5;color:white;padding:10px 20px;text-decoration:none;border-radius:6px">View Task</a>
+    ${params.note ? `<div style="margin-top:16px;padding:12px 14px;background:#f3f4f6;border-radius:6px;border-left:3px solid #4f46e5"><div style="font-weight:600;font-size:12px;color:#4f46e5;margin-bottom:6px">Message:</div><div style="font-style:italic;color:#374151">${params.note.replace(/\n/g, "<br>")}</div></div>` : ""}
+    <p style="margin-top:20px">
+      <a href="${appUrl}/sm/tasks/${params.taskId}" style="background:#4f46e5;color:white;padding:10px 24px;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;display:inline-block">
+        View Task →
+      </a>
     </p>
   `;
 

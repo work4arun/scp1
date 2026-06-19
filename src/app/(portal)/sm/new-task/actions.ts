@@ -18,6 +18,17 @@ function parseIdList(value: string): string[] {
   return value ? value.split(",").map((id) => id.trim()).filter(Boolean) : [];
 }
 
+function interventionColor(flag: InterventionFlag) {
+  if (flag === "YES") return "#dc2626";
+  if (flag === "ONLY_IF_DELAYED") return "#2563eb";
+  return "#16a34a";
+}
+function interventionLabel(flag: InterventionFlag) {
+  if (flag === "YES") return "Yes";
+  if (flag === "ONLY_IF_DELAYED") return "Only if delayed";
+  return "No";
+}
+
 export async function createTaskAction(formData: FormData): Promise<CreateTaskResult> {
   const session = await auth();
   if (!canManageTasks(session?.user.systemRole) || !session?.user.id) {
@@ -64,8 +75,8 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
   const vertical = await prisma.vertical.findUnique({ where: { id: verticalId } });
   if (!vertical) return { success: false, error: "Selected vertical was not found." };
 
-  const priority = await prisma.priority.findUnique({ where: { id: priorityId }, select: { code: true } });
-  const priorityCode = priority?.code || "P4";
+  const priority = await prisma.priority.findUnique({ where: { id: priorityId }, select: { code: true, label: true, colorHex: true } });
+  if (!priority) return { success: false, error: "Selected priority was not found." };
 
   let created;
   const MAX_ATTEMPTS = 5;
@@ -113,14 +124,14 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
 
   // ── Resolve all recipients ────────────────────────────────────────────
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-  const sent = new Set<string>();
+  const priorityDisplay = `${priority.code} — ${priority.label}`;
 
   // Resolve member emails from team IDs (for TO, CC, BCC)
-  const membersOf = async (tids: string[]): Promise<{ id: string; name: string; email: string }[]> => {
+  const membersOf = async (tids: string[]): Promise<{ id: string; name: string; email: string; teamId: string }[]> => {
     if (tids.length === 0) return [];
     return prisma.teamMember.findMany({
       where: { teamId: { in: tids }, active: true },
-      select: { id: true, name: true, email: true },
+      select: { id: true, name: true, email: true, teamId: true },
     });
   };
   const membersById = async (mids: string[]): Promise<{ id: string; name: string; email: string }[]> => {
@@ -133,8 +144,8 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
 
   const toMembers: { email: string; name: string }[] = [];
   for (const m of await membersOf(teamIds)) {
-    const shouldSend = teamIds.some((tid) => teamSendEmailMap.get(tid) !== false);
-    if (shouldSend) toMembers.push({ email: m.email, name: m.name });
+    const sendForThisTeam = teamSendEmailMap.get(m.teamId) ?? true;
+    if (sendForThisTeam) toMembers.push({ email: m.email, name: m.name });
   }
   for (const m of await membersById(memberIds)) {
     if (memberSendEmailMap.get(m.id) !== false) toMembers.push({ email: m.email, name: m.name });
@@ -157,19 +168,20 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
   // Build email
   const subject = `[SCP] New Task: ${created.code} — ${created.title}`;
   const html = `
-    <h2>New Task Assigned</h2>
-    <p>The following task has been created:</p>
-    <table style="border-collapse:collapse;width:100%;max-width:600px">
-      <tr><td style="padding:6px;font-weight:bold">Task Code</td><td style="padding:6px">${created.code}</td></tr>
-      <tr><td style="padding:6px;font-weight:bold">Title</td><td style="padding:6px">${created.title}</td></tr>
-      <tr><td style="padding:6px;font-weight:bold">Priority</td><td style="padding:6px">${priorityCode}</td></tr>
-      ${deadlineStr ? `<tr><td style="padding:6px;font-weight:bold">Deadline</td><td style="padding:6px">${new Date(deadlineStr).toLocaleDateString()}</td></tr>` : ""}
-      ${expectedOutput ? `<tr><td style="padding:6px;font-weight:bold">Expected Output</td><td style="padding:6px">${expectedOutput}</td></tr>` : ""}
+    <h2 style="margin-bottom:12px">New Task Assigned</h2>
+    <p style="margin-bottom:16px;color:#374151">The following task has been assigned to you:</p>
+    <table style="border-collapse:collapse;width:100%;max-width:600px;font-size:14px">
+      <tr><td style="padding:8px 10px;font-weight:bold;width:140px;background:#f9fafb;border:1px solid #e5e7eb">Task Code</td><td style="padding:8px 10px;border:1px solid #e5e7eb"><strong>${created.code}</strong></td></tr>
+      <tr><td style="padding:8px 10px;font-weight:bold;background:#f9fafb;border:1px solid #e5e7eb">Title</td><td style="padding:8px 10px;border:1px solid #e5e7eb">${created.title}</td></tr>
+      <tr><td style="padding:8px 10px;font-weight:bold;background:#f9fafb;border:1px solid #e5e7eb">Priority</td><td style="padding:8px 10px;border:1px solid #e5e7eb"><span style="display:inline-block;padding:2px 10px;border-radius:4px;background:${priority.colorHex || '#6b7280'};color:#fff;font-weight:600;font-size:13px">${priorityDisplay}</span></td></tr>
+      ${deadlineStr ? `<tr><td style="padding:8px 10px;font-weight:bold;background:#f9fafb;border:1px solid #e5e7eb">Deadline</td><td style="padding:8px 10px;border:1px solid #e5e7eb">${new Date(deadlineStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td></tr>` : ""}
+      ${expectedOutput ? `<tr><td style="padding:8px 10px;font-weight:bold;background:#f9fafb;border:1px solid #e5e7eb">Expected Output</td><td style="padding:8px 10px;border:1px solid #e5e7eb">${expectedOutput}</td></tr>` : ""}
+      <tr><td style="padding:8px 10px;font-weight:bold;background:#f9fafb;border:1px solid #e5e7eb">Dr. BN Intervention</td><td style="padding:8px 10px;border:1px solid #e5e7eb"><span style="font-weight:700;color:${interventionColor(intervention)}">${interventionLabel(intervention)}</span></td></tr>
     </table>
-    ${extraMessage ? `<div style="margin-top:12px;padding:10px;background:#f3f4f6;border-radius:6px;font-style:italic">${extraMessage.replace(/\n/g, "<br>")}</div>` : ""}
-    <p style="margin-top:16px">
-      <a href="${appUrl}/sm/tasks/${created.id}" style="background:#4f46e5;color:white;padding:10px 20px;text-decoration:none;border-radius:6px">
-        View Task
+    ${extraMessage ? `<div style="margin-top:16px;padding:12px 14px;background:#f3f4f6;border-radius:6px;border-left:3px solid #4f46e5"><div style="font-weight:600;font-size:12px;color:#4f46e5;margin-bottom:6px">Message:</div><div style="font-style:italic;color:#374151">${extraMessage.replace(/\n/g, "<br>")}</div></div>` : ""}
+    <p style="margin-top:20px">
+      <a href="${appUrl}/sm/tasks/${created.id}" style="background:#4f46e5;color:white;padding:10px 24px;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;display:inline-block">
+        View Task →
       </a>
     </p>
   `;
@@ -177,7 +189,6 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
   if (toEmails.length > 0) {
     const result = await sendEmail({ to: toEmails, cc: ccEmails, bcc: bccEmails, subject, html });
     for (const e of toEmails) {
-      sent.add(e);
       await prisma.emailLog.create({ data: { taskId: created.id, recipient: e, subject, status: result.success ? "sent" : "failed", errorMsg: result.error || null, ...(result.messageId ? { listmonkId: result.messageId } : {}) } });
     }
   }
