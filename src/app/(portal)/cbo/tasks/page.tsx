@@ -27,7 +27,7 @@ export default async function CboAllTasks({ searchParams }: { searchParams: Task
         assignees: { include: { member: true } },
         updates: { orderBy: { createdAt: "desc" }, take: 1 },
         _count: { select: { messages: true } },
-        messages: { select: { audioBytes: true } },
+        messages: { select: { text: true, audioBytes: true } },
       },
     }),
     prisma.vertical.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
