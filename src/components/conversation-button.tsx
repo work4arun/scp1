@@ -18,7 +18,7 @@ export function ConversationButton({
 
   return (
     <Link
-      href={`${baseUrl}/${taskId}?chat=1`}
+      href={`${baseUrl}/${taskId}?chat=1#conversation-section`}
       className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-accent hover:border-primary/40 shrink-0"
       title="Open conversation"
     >

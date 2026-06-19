@@ -9,7 +9,7 @@ import { formatRelative, formatDate } from "@/lib/utils";
 import { TaskChat } from "./chat-box";
 import { ConversationButton } from "@/components/conversation-button";
 
-export default async function ExternalTaskDetail({ params }: { params: { id: string } }) {
+export default async function ExternalTaskDetail({ params, searchParams }: { params: { id: string }; searchParams: { chat?: string } }) {
   const token = cookies().get("ext_token")?.value;
   if (!token) redirect("/external");
   const user = await validateToken(token);
@@ -93,7 +93,7 @@ export default async function ExternalTaskDetail({ params }: { params: { id: str
       </Card>
 
       {/* Chat box */}
-      <TaskChat taskId={task.id} memberId={user.memberId} memberName={user.memberName} messages={task.messages} />
+      <TaskChat taskId={task.id} memberId={user.memberId} memberName={user.memberName} messages={task.messages} defaultOpen={searchParams.chat === "1"} />
     </div>
   );
 }

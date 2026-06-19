@@ -25,14 +25,16 @@ export function TaskChat({
   memberId,
   memberName,
   messages: initialMessages,
+  defaultOpen = false,
 }: {
   taskId: string;
   memberId: string;
   memberName: string;
   messages: Message[];
+  defaultOpen?: boolean;
 }) {
   const router = useRouter();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(!defaultOpen);
   const [pending, startTransition] = useTransition();
   const [text, setText] = useState("");
   const [recording, setRecording] = useState(false);
@@ -95,7 +97,7 @@ export function TaskChat({
   const formatDate = (d: Date) => new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 
   return (
-    <Card>
+    <Card id="conversation-section">
       <CardHeader
         className="cursor-pointer select-none flex flex-row items-center justify-between"
         onClick={() => setCollapsed(!collapsed)}
