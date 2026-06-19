@@ -33,14 +33,11 @@ RUN apk add --no-cache openssl tini \
 
 # Copy ALL node_modules from deps (includes prisma CLI, engines, and all deps)
 COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
-# Overlay standalone server (optimized, self-contained)
+# Overlay standalone server with its .next directory
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./standalone-work
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-
-# Merge standalone's minimal server.js from standalone-work into /app
-RUN cp standalone-work/server.js . && rm -rf standalone-work
 
 COPY --chown=nextjs:nodejs docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
