@@ -169,6 +169,39 @@ model EmailLog {
   @@index([createdAt])
 }
 
+model ExternalAccessToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  memberId  String
+  member    TeamMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  taskId    String?
+  task      Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+  lastUsedAt DateTime?
+
+  @@index([token])
+  @@index([memberId])
+  @@index([taskId])
+}
+
+model TaskMessage {
+  id          String   @id @default(cuid())
+  taskId      String
+  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      TeamMember @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorRole  String   @default("member")
+  text        String?
+  audioBytes  Bytes?
+  audioMime   String?
+  audioDurationS Int?
+  createdAt   DateTime @default(now())
+
+  @@index([taskId, createdAt])
+  @@index([authorId])
+}
+
 model Vertical {
   id          String  @id @default(cuid())
   name        String  @unique

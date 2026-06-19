@@ -9,6 +9,7 @@ import { writeAudit } from "@/lib/audit";
 import { friendlyPrismaError } from "@/lib/prisma-errors";
 import { computeNextTaskCode } from "@/lib/task-code";
 import { sendEmail } from "@/lib/email";
+import { getOrCreateToken } from "@/lib/token-auth";
 
 export type CreateTaskResult =
   | { success: true; id: string }
@@ -161,6 +162,15 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
   for (const m of await membersOf(bccTeamIds)) bccAll.push({ email: m.email, name: m.name });
   for (const m of await membersById(bccMemberIds)) bccAll.push({ email: m.email, name: m.name });
 
+  // Generate tokens for each TO recipient
+  const toTokenMap = new Map<string, string>();
+  for (const m of toMembers) {
+    const member = await prisma.teamMember.findFirst({ where: { email: m.email, active: true } });
+    if (member) {
+      toTokenMap.set(m.email, await getOrCreateToken(member.id, created.id));
+    }
+  }
+
   const toEmails = toMembers.map((m) => m.email);
   const ccEmails = ccAll.map((m) => m.email);
   const bccEmails = bccAll.map((m) => m.email);
@@ -180,15 +190,18 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
     </table>
     ${extraMessage ? `<div style="margin-top:16px;padding:12px 14px;background:#f3f4f6;border-radius:6px;border-left:3px solid #4f46e5"><div style="font-weight:600;font-size:12px;color:#4f46e5;margin-bottom:6px">Message:</div><div style="font-style:italic;color:#374151">${extraMessage.replace(/\n/g, "<br>")}</div></div>` : ""}
     <p style="margin-top:20px">
-      <a href="${appUrl}/sm/tasks/${created.id}" style="background:#4f46e5;color:white;padding:10px 24px;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;display:inline-block">
+      <a href="${appUrl}/external?token=\${TOKEN_PLACEHOLDER}" style="background:#4f46e5;color:white;padding:10px 24px;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;display:inline-block">
         View Task →
       </a>
     </p>
   `;
 
   if (toEmails.length > 0) {
-    const result = await sendEmail({ to: toEmails, cc: ccEmails, bcc: bccEmails, subject, html });
+    // Send individual emails with personalized tokens
     for (const e of toEmails) {
+      const token = toTokenMap.get(e);
+      const personalizedHtml = html.replace("${TOKEN_PLACEHOLDER}", token || "");
+      const result = await sendEmail({ to: e, cc: ccEmails.length > 0 && toEmails.indexOf(e) === 0 ? ccEmails : [], bcc: bccEmails.length > 0 && toEmails.indexOf(e) === 0 ? bccEmails : [], subject, html: personalizedHtml });
       await prisma.emailLog.create({ data: { taskId: created.id, recipient: e, subject, status: result.success ? "sent" : "failed", errorMsg: result.error || null, ...(result.messageId ? { listmonkId: result.messageId } : {}) } });
     }
   }
