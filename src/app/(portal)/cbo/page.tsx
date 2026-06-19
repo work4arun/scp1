@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge, PriorityBadge } from "@/components/status-badges";
 import { formatRelative, formatDate } from "@/lib/utils";
-import { Layers } from "lucide-react";
+import { Layers, MessageSquare, Mic } from "lucide-react";
 import Link from "next/link";
 import { TaskStatusFilter } from "./overview-status-filter";
 import { TaskNotePanel } from "./task-note-panel";
@@ -94,7 +94,7 @@ export default async function CboHome({ searchParams }: { searchParams: Record<s
                   <span className="text-sm font-medium truncate group-hover:text-primary">{t.title}</span>
                   <span className="text-[10px] text-muted-foreground truncate hidden sm:inline">{assigneeNames}{t.deadline ? ` · ${formatDate(t.deadline)}` : ""} · {formatRelative(t.lastUpdateAt || t.updatedAt)}</span>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.preventDefault()}>
+                <div className="flex items-center gap-1.5 shrink-0">
                   <PriorityBadge code={t.priority.code} />
                   <StatusBadge status={t.status} />
                 </div>
