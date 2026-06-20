@@ -1,0 +1,5 @@
+old_priority_id,code,label,rank
+cmoj2reqm002oxk85v8rq58a6,P1,Critical,1
+cmoj2reqq002pxk85srkt5qsy,P2,Important,2
+cmoj2reqs002qxk85b5tuberg,P3,Operational,3
+cmoj2reqv002rxk858ar8lb0w,P4,Parked,4

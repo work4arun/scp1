@@ -1,0 +1,4 @@
+old_user_id,email,name,system_role,owner_role_name,owner_role_id,active
+cmoj2rexy002vxk851qncfoc2,cbo@rathinam.in,Dr. BN (CBO),CBO,,,t
+cmoj2reur002txk85m6ya4byh,sadmin@rathinam.in,Super Admin,SUPER_ADMIN,,,t
+cmoj2rf13002xxk85dachrvmn,sm@rathinam.in,Senior Manager,SM,Senior Manager,cmoj2ren2000yxk85nm65jskt,t
