@@ -51,21 +51,12 @@ export async function updateTaskAction(taskId: string, formData: FormData): Prom
   const extraMessage = (formData.get("extraMessage") as string) || "";
   const shouldSendEmail = String(formData.get("sendEmail") || "false") === "true";
 
-  // Team email flags
   const teamSendEmailMap = new Map<string, boolean>();
-  for (const tid of teamIds) {
-    const sendVal = formData.get(`teamsend_${tid}`);
-    teamSendEmailMap.set(tid, sendVal !== "false");
-  }
+  for (const tid of teamIds) { const sendVal = formData.get(`teamsend_${tid}`); teamSendEmailMap.set(tid, sendVal !== "false"); }
   const memberSendEmailMap = new Map<string, boolean>();
-  for (const mid of memberIds) {
-    const sendVal = formData.get(`membersend_${mid}`);
-    memberSendEmailMap.set(mid, sendVal !== "false");
-  }
+  for (const mid of memberIds) { const sendVal = formData.get(`membersend_${mid}`); memberSendEmailMap.set(mid, sendVal !== "false"); }
 
-  if (teamIds.length === 0 && memberIds.length === 0) {
-    return { success: false, error: "Please assign at least one team or member." };
-  }
+  if (teamIds.length === 0 && memberIds.length === 0) return { success: false, error: "Please assign at least one team or member." };
 
   const labels = await resolveLabels(patch, existing as any);
   const diffs = buildDiff(existing as Record<string, unknown>, patch, labels);
@@ -75,12 +66,12 @@ export async function updateTaskAction(taskId: string, formData: FormData): Prom
       if (memberIds.length > 0) await tx.taskAssignment.createMany({ data: memberIds.map((mid) => ({ taskId, memberId: mid, sendEmail: memberSendEmailMap.get(mid) ?? true })) });
       if (teamIds.length > 0) await tx.taskTeamAssignment.createMany({ data: teamIds.map((tid) => ({ taskId, teamId: tid, sendEmail: teamSendEmailMap.get(tid) ?? true })) });
     });
-    if (diffs.length > 0) await prisma.taskUpdate.create({ data: { taskId, authorId: authed.userId, note: `📝 Edit:\n${diffs.join("\n")}`, newStatus: (patch.status as TaskStatus) !== existing.status ? (patch.status as TaskStatus) : null } });
+    if (diffs.length > 0) await prisma.taskUpdate.create({ data: { taskId, authorId: authed.userId, note: `📝 Edit:
+${diffs.join("\n")}`, newStatus: (patch.status as TaskStatus) !== existing.status ? (patch.status as TaskStatus) : null } });
   } catch (err) { return { success: false, error: friendlyPrismaError(err) ?? "Could not save." }; }
 
   revalidatePath(`/sm/tasks/${taskId}`); revalidatePath("/sm/tasks"); revalidatePath("/sm"); revalidatePath("/cbo");
 
-  // ── Send email if requested ─────────────────────────────────────────────
   if (shouldSendEmail) {
     await sendEditEmail(taskId, existing, patch, teamIds, memberIds, ccTeamIds, ccMemberIds, bccTeamIds, bccMemberIds, teamSendEmailMap, memberSendEmailMap, extraMessage, authed, diffs);
   }
@@ -89,43 +80,25 @@ export async function updateTaskAction(taskId: string, formData: FormData): Prom
 }
 
 async function sendEditEmail(
-  taskId: string,
-  existing: any,
-  patch: Record<string, unknown>,
+  taskId: string, existing: any, patch: Record<string, unknown>,
   teamIds: string[], memberIds: string[],
   ccTeamIds: string[], ccMemberIds: string[],
   bccTeamIds: string[], bccMemberIds: string[],
   teamSendEmailMap: Map<string, boolean>, memberSendEmailMap: Map<string, boolean>,
-  extraMessage: string,
-  authed: { userId: string; userName: string },
-  diffs: string[],
+  extraMessage: string, authed: { userId: string; userName: string }, diffs: string[],
 ) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const membersOf = async (tids: string[]) => tids.length === 0 ? [] : prisma.teamMember.findMany({ where: { teamId: { in: tids }, active: true }, select: { id: true, name: true, email: true, teamId: true } });
+  const membersById = async (mids: string[]) => mids.length === 0 ? [] : prisma.teamMember.findMany({ where: { id: { in: mids }, active: true }, select: { id: true, name: true, email: true } });
 
-  const membersOf = async (tids: string[]): Promise<{ id: string; name: string; email: string; teamId: string }[]> => {
-    if (tids.length === 0) return [];
-    return prisma.teamMember.findMany({ where: { teamId: { in: tids }, active: true }, select: { id: true, name: true, email: true, teamId: true } });
-  };
-  const membersById = async (mids: string[]): Promise<{ id: string; name: string; email: string }[]> => {
-    if (mids.length === 0) return [];
-    return prisma.teamMember.findMany({ where: { id: { in: mids }, active: true }, select: { id: true, name: true, email: true } });
-  };
-
-  // TO recipients
   const toMembers: { email: string; name: string }[] = [];
-  for (const m of await membersOf(teamIds)) {
-    if ((teamSendEmailMap.get(m.teamId) ?? true)) toMembers.push({ email: m.email, name: m.name });
-  }
-  for (const m of await membersById(memberIds)) {
-    if (memberSendEmailMap.get(m.id) !== false) toMembers.push({ email: m.email, name: m.name });
-  }
+  for (const m of await membersOf(teamIds)) { if ((teamSendEmailMap.get(m.teamId) ?? true)) toMembers.push({ email: m.email, name: m.name }); }
+  for (const m of await membersById(memberIds)) { if (memberSendEmailMap.get(m.id) !== false) toMembers.push({ email: m.email, name: m.name }); }
 
-  // CC recipients
   const ccAll: { email: string; name: string }[] = [];
   for (const m of await membersOf(ccTeamIds)) ccAll.push({ email: m.email, name: m.name });
   for (const m of await membersById(ccMemberIds)) ccAll.push({ email: m.email, name: m.name });
 
-  // BCC recipients
   const bccAll: { email: string; name: string }[] = [];
   for (const m of await membersOf(bccTeamIds)) bccAll.push({ email: m.email, name: m.name });
   for (const m of await membersById(bccMemberIds)) bccAll.push({ email: m.email, name: m.name });
@@ -133,10 +106,10 @@ async function sendEditEmail(
   const toEmails = toMembers.map((m) => m.email);
   const ccEmails = ccAll.map((m) => m.email);
   const bccEmails = bccAll.map((m) => m.email);
+  const hasCCBCC = ccAll.length > 0 || bccAll.length > 0;
 
   if (toEmails.length === 0) return;
 
-  // Generate tokens
   const toTokenMap = new Map<string, string>();
   for (const m of toMembers) {
     const member = await prisma.teamMember.findFirst({ where: { email: m.email, active: true } });
@@ -158,11 +131,11 @@ async function sendEditEmail(
     </table>
     ${diffs.length > 0 ? `<div style="margin-top:14px"><div style="font-weight:600;font-size:13px;margin-bottom:6px">Changes:</div><ul style="margin:0;padding-left:20px;font-size:13px;color:#374151">${diffLines}</ul></div>` : ""}
     ${extraMessage ? `<div style="margin-top:14px;padding:12px 14px;background:#f3f4f6;border-radius:6px;border-left:3px solid #4f46e5"><div style="font-weight:600;font-size:12px;color:#4f46e5;margin-bottom:6px">Message from ${authed.userName}:</div><div style="font-style:italic;color:#374151">${extraMessage.replace(/\n/g, "<br>")}</div></div>` : ""}
-    <p style="margin-top:20px">
-      <a href="${appUrl}/external/token?token=\${TOKEN_PLACEHOLDER}" style="background:#4f46e5;color:white;padding:10px 24px;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;display:inline-block">
+    ${!hasCCBCC ? `<p style="margin-top:20px">
+      <a href="${appUrl}/external/token?token=\${TOKEN_PLACEHOLDER}&taskId=${taskId}" style="background:#4f46e5;color:white;padding:10px 24px;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;display:inline-block">
         View Task →
       </a>
-    </p>
+    </p>` : ""}
   `;
 
   for (const e of toEmails) {
