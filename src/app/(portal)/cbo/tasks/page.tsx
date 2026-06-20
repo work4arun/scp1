@@ -9,6 +9,7 @@ import { ConversationButton } from "@/components/conversation-button";
 import { buildTaskWhere, type TaskFilterParams } from "../task-filter-utils";
 import { formatRelative, formatDate } from "@/lib/utils";
 import Link from "next/link";
+import { Mic } from "lucide-react";
 
 export default async function CboAllTasks({ searchParams }: { searchParams: TaskFilterParams }) {
   const session = await auth();
@@ -54,36 +55,64 @@ export default async function CboAllTasks({ searchParams }: { searchParams: Task
             <div className="py-6 text-sm text-muted-foreground text-center">No active tasks found.</div>
           ) : (
             <>
-              {/* Desktop table — hidden on mobile, visible on md+ */}
+              {/* Desktop view — hidden on mobile, visible on md+ */}
               <div className="hidden md:block overflow-x-auto">
-                <table className="w-full text-sm border-collapse">
-                  <thead><tr className="border-b border-border bg-muted/40"><Th>Task ID</Th><Th>Vertical</Th><Th minW="200px">Task / Activity</Th><Th>Priority</Th><Th minW="140px">Assigned</Th><Th>Deadline</Th><Th>Status</Th><Th>Last Update</Th><Th minW="160px">Delay Reason</Th><Th minW="160px">Support Needed</Th><Th>Dr. BN?</Th><Th minW="180px">Next Action</Th><Th>Chat</Th></tr></thead>
-                  <tbody>
-                    {allTasks.map((t, i) => {
-                      const lastUpdate = t.updates[0]; const isDelayed = t.status === "DELAYED";
-                      const assigneeLabel = t.teamAssignments.length > 0 ? t.teamAssignments.map((ta) => `[${ta.team.name}]`).join(", ") : t.assignees.map((a) => a.member.name).join(", ") || "—";
-                      const textCount = t.messages.filter((m) => m.text != null).length;
-                      const voiceCount = t.messages.filter((m) => m.audioBytes != null).length;
-                      return (
-                        <tr key={t.id} className={`border-b border-border ${i % 2 === 0 ? "bg-card" : "bg-muted/10"} ${isDelayed ? "bg-red-50 dark:bg-red-950/10" : ""}`}>
-                          <td><Link href={`/cbo/tasks/${t.id}`} className="font-mono text-xs text-primary hover:underline">{t.code}</Link></td>
-                          <td><span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ backgroundColor: t.vertical.colorHex }}>{t.vertical.name}</span></td>
-                        <td className="text-xs truncate max-w-[200px]"><Link href={`/cbo/tasks/${t.id}`} className="hover:text-primary">{t.title}</Link></td>
-                          <td><PriorityBadge code={t.priority.code} /></td>
-                          <td className="text-xs text-muted-foreground">{assigneeLabel}</td>
-                          <td className="text-xs">{t.deadline ? formatDate(t.deadline) : "—"}</td>
-                          <td><StatusBadge status={t.status} /></td>
-                          <td className="text-xs text-muted-foreground">{lastUpdate ? formatRelative(lastUpdate.createdAt) : "—"}</td>
-                          <td className={`text-xs ${isDelayed ? "text-red-600 font-semibold" : ""}`}>{t.delayReason || "—"}</td>
-                          <td className="text-xs">{t.supportNeeded || "—"}</td>
-                          <td className="text-xs">{t.intervention === "NO" ? "No" : t.intervention === "YES" ? "Yes" : "If delayed"}</td>
-                          <td className="text-xs">{t.nextAction || "—"}</td>
-                          <td><ConversationButton taskId={t.id} baseUrl="/cbo/tasks" textCount={textCount} voiceCount={voiceCount} /></td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <div className="min-w-[1400px]">
+                  {/* Header row */}
+                  <div className="grid grid-cols-[80px_70px_1fr_60px_130px_80px_90px_90px_150px_150px_50px_170px_80px] gap-2 items-center border-b border-border bg-muted/40 px-2 py-2 text-[10px] font-bold uppercase text-muted-foreground">
+                    <div>Task ID</div>
+                    <div>Vertical</div>
+                    <div>Task / Activity</div>
+                    <div className="text-center">Priority</div>
+                    <div>Assigned</div>
+                    <div>Deadline</div>
+                    <div className="text-center">Status</div>
+                    <div>Updated</div>
+                    <div>Delay Reason</div>
+                    <div>Support</div>
+                    <div className="text-center">Dr. BN</div>
+                    <div>Next Action</div>
+                    <div className="text-center">Chat</div>
+                  </div>
+                  {/* Data rows — each is a clickable Link */}
+                  {allTasks.map((t, i) => {
+                    const lastUpdate = t.updates[0]; const isDelayed = t.status === "DELAYED";
+                    const assigneeLabel = t.teamAssignments.length > 0 ? t.teamAssignments.map((ta) => `[${ta.team.name}]`).join(", ") : t.assignees.map((a) => a.member.name).join(", ") || "—";
+                    const textCount = t.messages.filter((m) => m.text != null).length;
+                    const voiceCount = t.messages.filter((m) => m.audioBytes != null).length;
+                    const hasChat = textCount > 0 || voiceCount > 0;
+                    return (
+                      <Link
+                        key={t.id}
+                        href={`/cbo/tasks/${t.id}`}
+                        className={`grid grid-cols-[80px_70px_1fr_60px_130px_80px_90px_90px_150px_150px_50px_170px_80px] gap-2 items-center border-b border-border px-2 py-1.5 text-xs transition-colors hover:bg-accent ${i % 2 === 0 ? "bg-card" : "bg-muted/10"} ${isDelayed ? "bg-red-50 dark:bg-red-950/10" : ""}`}
+                      >
+                        <div className="font-mono font-bold text-primary">{t.code}</div>
+                        <div><span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold text-white whitespace-nowrap" style={{ backgroundColor: t.vertical.colorHex }}>{t.vertical.name}</span></div>
+                        <div className="truncate font-medium">{t.title}</div>
+                        <div className="flex justify-center"><PriorityBadge code={t.priority.code} /></div>
+                        <div className="text-muted-foreground truncate">{assigneeLabel}</div>
+                        <div>{t.deadline ? formatDate(t.deadline) : "—"}</div>
+                        <div className="flex justify-center"><StatusBadge status={t.status} /></div>
+                        <div className="text-muted-foreground truncate">{lastUpdate ? formatRelative(lastUpdate.createdAt) : "—"}</div>
+                        <div className={`truncate ${isDelayed ? "text-red-600 font-semibold" : ""}`}>{t.delayReason || "—"}</div>
+                        <div className="truncate">{t.supportNeeded || "—"}</div>
+                        <div className="text-center">{t.intervention === "NO" ? "No" : t.intervention === "YES" ? "Yes" : "If delayed"}</div>
+                        <div className="truncate">{t.nextAction || "—"}</div>
+                        <div className="flex justify-center items-center gap-1 text-[10px]">
+                          {hasChat ? (
+                            <>
+                              {textCount > 0 && <span className="inline-flex items-center justify-center h-4 min-w-[16px] rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">{textCount}</span>}
+                              {voiceCount > 0 && <span className="inline-flex items-center gap-0.5"><Mic className="h-3 w-3" />{voiceCount}</span>}
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground">Chat</span>
+                          )}
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Mobile cards — visible on mobile only */}

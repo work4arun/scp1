@@ -12,7 +12,8 @@ export default async function ExternalTasksPage() {
   const user = await validateToken(token);
   if (!user) redirect("/external?error=invalid-token");
 
-  const assignments = await prisma.taskAssignment.findMany({
+  // Get individually assigned tasks
+  const individualAssignments = await prisma.taskAssignment.findMany({
     where: { memberId: user.memberId },
     include: {
       task: {
@@ -27,24 +28,46 @@ export default async function ExternalTasksPage() {
     orderBy: { assignedAt: "desc" },
   });
 
-  const tasks = assignments.map((a) => a.task);
+  // Get tasks assigned to the user's team (where they're not already individually assigned)
+  const individualTaskIds = individualAssignments.map((a) => a.taskId);
+  const teamAssignments = await prisma.taskTeamAssignment.findMany({
+    where: {
+      teamId: user.teamId,
+      taskId: { notIn: individualTaskIds },
+    },
+    include: {
+      task: {
+        include: {
+          vertical: { select: { name: true, code: true } },
+          priority: true,
+          teamAssignments: { include: { team: { select: { name: true } } } },
+          assignees: { include: { member: { select: { name: true } } } },
+        },
+      },
+    },
+    orderBy: { assignedAt: "desc" },
+  });
+
+  const individualTasks = individualAssignments.map((a) => a.task);
+  const teamTasks = teamAssignments.map((ta) => ta.task);
+  const allTasks = [...individualTasks, ...teamTasks];
 
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">My Tasks</h1>
-        <p className="text-xs text-muted-foreground">{tasks.length} task(s)</p>
+        <p className="text-xs text-muted-foreground">{allTasks.length} task(s) · {individualTasks.length} direct, {teamTasks.length} team</p>
       </div>
 
-      {tasks.length === 0 ? (
+      {allTasks.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            No tasks assigned to you yet.
+            No tasks assigned to you or your team yet.
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-2">
-          {tasks.map((task) => (
+          {allTasks.map((task) => (
             <Link
               key={task.id}
               href={`/external/tasks/${task.id}`}

@@ -15,11 +15,21 @@ export default async function ExternalTaskDetail({ params, searchParams }: { par
   const user = await validateToken(token);
   if (!user) redirect("/external?error=invalid-token");
 
-  // Verify this member is assigned to this task
-  const assignment = await prisma.taskAssignment.findUnique({
+  // Check individual assignment
+  const individualAssignment = await prisma.taskAssignment.findUnique({
     where: { taskId_memberId: { taskId: params.id, memberId: user.memberId } },
   });
-  if (!assignment) redirect("/external/tasks");
+
+  // Check team assignment if not individually assigned
+  let hasAccess = !!individualAssignment;
+  if (!hasAccess) {
+    const teamAssignment = await prisma.taskTeamAssignment.findUnique({
+      where: { taskId_teamId: { taskId: params.id, teamId: user.teamId } },
+    });
+    hasAccess = !!teamAssignment;
+  }
+
+  if (!hasAccess) redirect("/external/tasks");
 
   const task = await prisma.task.findUnique({
     where: { id: params.id },
@@ -92,7 +102,6 @@ export default async function ExternalTaskDetail({ params, searchParams }: { par
         </CardContent>
       </Card>
 
-      {/* Chat box */}
       <TaskChat taskId={task.id} memberId={user.memberId} memberName={user.memberName} messages={task.messages} defaultOpen={searchParams.chat === "1"} />
     </div>
   );

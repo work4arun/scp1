@@ -9,6 +9,8 @@ import { writeAudit } from "@/lib/audit";
 import { isEnabled } from "@/lib/features";
 import { friendlyPrismaError } from "@/lib/prisma-errors";
 import { computeNextTaskCode } from "@/lib/task-code";
+import { sendEmail } from "@/lib/email";
+import { getOrCreateToken } from "@/lib/token-auth";
 
 const HUMAN_FIELD: Record<string, string> = { title: "Title", verticalId: "Vertical", priorityId: "Priority", deadline: "Deadline", frequency: "Frequency", source: "Source", expectedOutput: "Expected output", supportNeeded: "Support needed", delayReason: "Delay reason", nextAction: "Next action", intervention: "Dr. BN intervention", status: "Status" };
 export type UpdateTaskResult = { success: false; error: string } | { success: true; redirectTo?: string };
@@ -19,27 +21,156 @@ const FORBIDDEN_MSG = "Your session is no longer valid or you don't have permiss
 type Authed = { ok: true; userId: string; userName: string; systemRole: SystemRole } | { ok: false; error: string };
 async function checkSm(): Promise<Authed> { const session = await auth(); if (!canManageTasks(session?.user.systemRole) || !session?.user.id) return { ok: false, error: FORBIDDEN_MSG }; return { ok: true, userId: session.user.id, userName: session.user.name || "Strategic Manager", systemRole: session.user.systemRole as SystemRole }; }
 
+function parseIdList(value: string): string[] {
+  return value ? value.split(",").map((id) => id.trim()).filter(Boolean) : [];
+}
+
+function interventionColor(flag: InterventionFlag) {
+  if (flag === "YES") return "#dc2626";
+  if (flag === "ONLY_IF_DELAYED") return "#2563eb";
+  return "#16a34a";
+}
+function interventionLabel(flag: InterventionFlag) {
+  if (flag === "YES") return "Yes";
+  if (flag === "ONLY_IF_DELAYED") return "Only if delayed";
+  return "No";
+}
+
 export async function updateTaskAction(taskId: string, formData: FormData): Promise<UpdateTaskResult> {
   const authed = await checkSm(); if (!authed.ok) return { success: false, error: authed.error };
   const existing = await prisma.task.findUnique({ where: { id: taskId }, include: { vertical: true, priority: true, teamAssignments: { include: { team: true } } } });
   if (!existing) return { success: false, error: "Task not found." };
   const patch: Record<string, unknown> = { title: String(formData.get("title") || "").trim(), verticalId: String(formData.get("verticalId") || ""), priorityId: String(formData.get("priorityId") || ""), frequency: (formData.get("frequency") as string) || null, source: ((formData.get("source") as string) || existing.source) as TaskSource, expectedOutput: (formData.get("expectedOutput") as string) || null, supportNeeded: (formData.get("supportNeeded") as string) || null, delayReason: (formData.get("delayReason") as string) || null, nextAction: (formData.get("nextAction") as string) || null, intervention: ((formData.get("intervention") as string) || "NO") as InterventionFlag, status: ((formData.get("status") as string) || existing.status) as TaskStatus, lastUpdateAt: new Date() };
   const deadlineStr = (formData.get("deadline") as string) || ""; patch.deadline = deadlineStr ? new Date(deadlineStr) : null;
-  const memberIdsRaw = (formData.get("memberIds") as string) || ""; const memberIds = memberIdsRaw ? memberIdsRaw.split(",").map((s) => s.trim()).filter(Boolean) : [];
-  const teamIdsRaw = (formData.get("teamIds") as string) || ""; const teamIds = teamIdsRaw ? teamIdsRaw.split(",").map((s) => s.trim()).filter(Boolean) : [];
+  const memberIds = parseIdList(String(formData.get("memberIds") || ""));
+  const teamIds = parseIdList(String(formData.get("teamIds") || ""));
+  const ccTeamIds = parseIdList(String(formData.get("ccTeamIds") || ""));
+  const ccMemberIds = parseIdList(String(formData.get("ccMemberIds") || ""));
+  const bccTeamIds = parseIdList(String(formData.get("bccTeamIds") || ""));
+  const bccMemberIds = parseIdList(String(formData.get("bccMemberIds") || ""));
+  const extraMessage = (formData.get("extraMessage") as string) || "";
+  const shouldSendEmail = String(formData.get("sendEmail") || "false") === "true";
+
+  // Team email flags
+  const teamSendEmailMap = new Map<string, boolean>();
+  for (const tid of teamIds) {
+    const sendVal = formData.get(`teamsend_${tid}`);
+    teamSendEmailMap.set(tid, sendVal !== "false");
+  }
+  const memberSendEmailMap = new Map<string, boolean>();
+  for (const mid of memberIds) {
+    const sendVal = formData.get(`membersend_${mid}`);
+    memberSendEmailMap.set(mid, sendVal !== "false");
+  }
+
+  if (teamIds.length === 0 && memberIds.length === 0) {
+    return { success: false, error: "Please assign at least one team or member." };
+  }
 
   const labels = await resolveLabels(patch, existing as any);
   const diffs = buildDiff(existing as Record<string, unknown>, patch, labels);
 
   try {
     await prisma.$transaction(async (tx) => { await tx.task.update({ where: { id: taskId }, data: patch }); await tx.taskAssignment.deleteMany({ where: { taskId } }); await tx.taskTeamAssignment.deleteMany({ where: { taskId } });
-      if (memberIds.length > 0) await tx.taskAssignment.createMany({ data: memberIds.map((mid) => ({ taskId, memberId: mid, sendEmail: true })) });
-      if (teamIds.length > 0) await tx.taskTeamAssignment.createMany({ data: teamIds.map((tid) => ({ taskId, teamId: tid, sendEmail: true })) });
+      if (memberIds.length > 0) await tx.taskAssignment.createMany({ data: memberIds.map((mid) => ({ taskId, memberId: mid, sendEmail: memberSendEmailMap.get(mid) ?? true })) });
+      if (teamIds.length > 0) await tx.taskTeamAssignment.createMany({ data: teamIds.map((tid) => ({ taskId, teamId: tid, sendEmail: teamSendEmailMap.get(tid) ?? true })) });
     });
     if (diffs.length > 0) await prisma.taskUpdate.create({ data: { taskId, authorId: authed.userId, note: `📝 Edit:\n${diffs.join("\n")}`, newStatus: (patch.status as TaskStatus) !== existing.status ? (patch.status as TaskStatus) : null } });
   } catch (err) { return { success: false, error: friendlyPrismaError(err) ?? "Could not save." }; }
+
   revalidatePath(`/sm/tasks/${taskId}`); revalidatePath("/sm/tasks"); revalidatePath("/sm"); revalidatePath("/cbo");
+
+  // ── Send email if requested ─────────────────────────────────────────────
+  if (shouldSendEmail) {
+    await sendEditEmail(taskId, existing, patch, teamIds, memberIds, ccTeamIds, ccMemberIds, bccTeamIds, bccMemberIds, teamSendEmailMap, memberSendEmailMap, extraMessage, authed, diffs);
+  }
+
   return { success: true, redirectTo: `/sm/tasks/${taskId}` };
+}
+
+async function sendEditEmail(
+  taskId: string,
+  existing: any,
+  patch: Record<string, unknown>,
+  teamIds: string[], memberIds: string[],
+  ccTeamIds: string[], ccMemberIds: string[],
+  bccTeamIds: string[], bccMemberIds: string[],
+  teamSendEmailMap: Map<string, boolean>, memberSendEmailMap: Map<string, boolean>,
+  extraMessage: string,
+  authed: { userId: string; userName: string },
+  diffs: string[],
+) {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
+  const membersOf = async (tids: string[]): Promise<{ id: string; name: string; email: string; teamId: string }[]> => {
+    if (tids.length === 0) return [];
+    return prisma.teamMember.findMany({ where: { teamId: { in: tids }, active: true }, select: { id: true, name: true, email: true, teamId: true } });
+  };
+  const membersById = async (mids: string[]): Promise<{ id: string; name: string; email: string }[]> => {
+    if (mids.length === 0) return [];
+    return prisma.teamMember.findMany({ where: { id: { in: mids }, active: true }, select: { id: true, name: true, email: true } });
+  };
+
+  // TO recipients
+  const toMembers: { email: string; name: string }[] = [];
+  for (const m of await membersOf(teamIds)) {
+    if ((teamSendEmailMap.get(m.teamId) ?? true)) toMembers.push({ email: m.email, name: m.name });
+  }
+  for (const m of await membersById(memberIds)) {
+    if (memberSendEmailMap.get(m.id) !== false) toMembers.push({ email: m.email, name: m.name });
+  }
+
+  // CC recipients
+  const ccAll: { email: string; name: string }[] = [];
+  for (const m of await membersOf(ccTeamIds)) ccAll.push({ email: m.email, name: m.name });
+  for (const m of await membersById(ccMemberIds)) ccAll.push({ email: m.email, name: m.name });
+
+  // BCC recipients
+  const bccAll: { email: string; name: string }[] = [];
+  for (const m of await membersOf(bccTeamIds)) bccAll.push({ email: m.email, name: m.name });
+  for (const m of await membersById(bccMemberIds)) bccAll.push({ email: m.email, name: m.name });
+
+  const toEmails = toMembers.map((m) => m.email);
+  const ccEmails = ccAll.map((m) => m.email);
+  const bccEmails = bccAll.map((m) => m.email);
+
+  if (toEmails.length === 0) return;
+
+  // Generate tokens
+  const toTokenMap = new Map<string, string>();
+  for (const m of toMembers) {
+    const member = await prisma.teamMember.findFirst({ where: { email: m.email, active: true } });
+    if (member) toTokenMap.set(m.email, await getOrCreateToken(member.id, taskId));
+  }
+
+  const priorityDisplay = `${existing.priority.code} — ${existing.priority.label}`;
+  const diffLines = diffs.length > 0 ? diffs.map((d) => `<li>${d}</li>`).join("") : "<li>Fields updated by ${authed.userName}</li>";
+
+  const subject = `[SCP] Task Updated: ${existing.code} — ${existing.title}`;
+  const html = `
+    <h2 style="margin-bottom:12px">Task Updated</h2>
+    <p style="margin-bottom:16px;color:#374151">The following task has been updated:</p>
+    <table style="border-collapse:collapse;width:100%;max-width:600px;font-size:14px">
+      <tr><td style="padding:8px 10px;font-weight:bold;width:140px;background:#f9fafb;border:1px solid #e5e7eb">Task Code</td><td style="padding:8px 10px;border:1px solid #e5e7eb"><strong>${existing.code}</strong></td></tr>
+      <tr><td style="padding:8px 10px;font-weight:bold;background:#f9fafb;border:1px solid #e5e7eb">Title</td><td style="padding:8px 10px;border:1px solid #e5e7eb">${existing.title}</td></tr>
+      <tr><td style="padding:8px 10px;font-weight:bold;background:#f9fafb;border:1px solid #e5e7eb">Priority</td><td style="padding:8px 10px;border:1px solid #e5e7eb"><span style="display:inline-block;padding:2px 10px;border-radius:4px;background:${existing.priority.colorHex || '#6b7280'};color:#fff;font-weight:600;font-size:13px">${priorityDisplay}</span></td></tr>
+      <tr><td style="padding:8px 10px;font-weight:bold;background:#f9fafb;border:1px solid #e5e7eb">Status</td><td style="padding:8px 10px;border:1px solid #e5e7eb"><strong>${String(patch.status || existing.status).replace(/_/g, " ")}</strong></td></tr>
+    </table>
+    ${diffs.length > 0 ? `<div style="margin-top:14px"><div style="font-weight:600;font-size:13px;margin-bottom:6px">Changes:</div><ul style="margin:0;padding-left:20px;font-size:13px;color:#374151">${diffLines}</ul></div>` : ""}
+    ${extraMessage ? `<div style="margin-top:14px;padding:12px 14px;background:#f3f4f6;border-radius:6px;border-left:3px solid #4f46e5"><div style="font-weight:600;font-size:12px;color:#4f46e5;margin-bottom:6px">Message from ${authed.userName}:</div><div style="font-style:italic;color:#374151">${extraMessage.replace(/\n/g, "<br>")}</div></div>` : ""}
+    <p style="margin-top:20px">
+      <a href="${appUrl}/external/token?token=\${TOKEN_PLACEHOLDER}" style="background:#4f46e5;color:white;padding:10px 24px;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;display:inline-block">
+        View Task →
+      </a>
+    </p>
+  `;
+
+  for (const e of toEmails) {
+    const token = toTokenMap.get(e);
+    const personalizedHtml = html.replace("${TOKEN_PLACEHOLDER}", token || "");
+    const result = await sendEmail({ to: e, cc: ccEmails.length > 0 && toEmails.indexOf(e) === 0 ? ccEmails : [], bcc: bccEmails.length > 0 && toEmails.indexOf(e) === 0 ? bccEmails : [], subject, html: personalizedHtml });
+    await prisma.emailLog.create({ data: { taskId, recipient: e, subject, status: result.success ? "sent" : "failed", errorMsg: result.error || null, ...(result.messageId ? { listmonkId: result.messageId } : {}) } });
+  }
 }
 
 export async function softDeleteTaskAction(taskId: string, reason: string): Promise<DeleteTaskResult> {

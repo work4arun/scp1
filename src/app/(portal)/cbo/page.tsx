@@ -40,8 +40,7 @@ export default async function CboHome({ searchParams }: { searchParams: Record<s
         teamAssignments: { include: { team: true } },
         assignees: { include: { member: true } },
         cboNotes: { orderBy: { createdAt: "desc" }, include: { author: { select: { name: true } } } },
-        _count: { select: { messages: true } },
-        messages: { select: { text: true, audioBytes: true } },
+        _count: { select: { cboNotes: true } },
       },
     }),
   ]);
@@ -83,28 +82,34 @@ export default async function CboHome({ searchParams }: { searchParams: Record<s
         <CardContent className="space-y-1">
           {tasks.length === 0 ? <div className="text-sm text-muted-foreground py-4 text-center">{filterLabel ? `No tasks match "${filterLabel}".` : "No tasks yet."}</div> : tasks.map((t) => {
             const assigneeNames = t.teamAssignments.length > 0 ? t.teamAssignments.map((ta) => `[${ta.team.name}]`).join(", ") : t.assignees.map((a) => a.member.name).join(", ") || "—";
-            const textCount = t.messages.filter((m) => m.text != null).length;
-            const voiceCount = t.messages.filter((m) => m.audioBytes != null).length;
+            const textCount = t.cboNotes.filter((m: any) => m.text != null).length;
+            const voiceCount = t.cboNotes.filter((m: any) => m.audioBytes != null).length;
             const hasChat = textCount > 0 || voiceCount > 0;
             return (
-              <Link key={t.id} href={`/cbo/tasks/${t.id}`} className="flex items-center gap-2 rounded-md border border-border px-3 py-2 hover:bg-accent transition-colors group cursor-pointer">
-                <div className="flex-1 min-w-0 flex items-center gap-2">
-                  <span className="font-mono text-[10px] font-bold text-muted-foreground shrink-0">{t.code}</span>
-                  <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold text-white shrink-0" style={{ backgroundColor: t.vertical.colorHex }}>{t.vertical.name}</span>
-                  <span className="text-sm font-medium truncate group-hover:text-primary">{t.title}</span>
-                  <span className="text-[10px] text-muted-foreground truncate hidden sm:inline">{assigneeNames}{t.deadline ? ` · ${formatDate(t.deadline)}` : ""}</span>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {/* Chat indicator */}
-                  {hasChat && (
-                    <span className="inline-flex items-center gap-1 text-[10px]">
-                      {textCount > 0 && <span className="inline-flex items-center justify-center h-4 min-w-[16px] rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">{textCount}</span>}
-                      {voiceCount > 0 && <span className="inline-flex items-center gap-0.5"><Mic className="h-3 w-3" />{voiceCount}</span>}
-                    </span>
-                  )}
-                  <TaskNotePanel taskId={t.id} notes={t.cboNotes.map(({ audioBytes, ...n }: any) => ({ ...n, audioBase64: audioBytes ? Buffer.from(audioBytes).toString("base64") : null }))} readOnly />
-                  <PriorityBadge code={t.priority.code} />
-                  <StatusBadge status={t.status} />
+              <Link key={t.id} href={`/cbo/tasks/${t.id}`} className="block rounded-md border border-border px-3 py-2 hover:bg-accent transition-colors group cursor-pointer">
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-mono text-[10px] font-bold text-muted-foreground">{t.code}</span>
+                      <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ backgroundColor: t.vertical.colorHex }}>{t.vertical.name}</span>
+                      <PriorityBadge code={t.priority.code} />
+                      <StatusBadge status={t.status} />
+                      {/* Chat counts inline on mobile */}
+                      {hasChat && (
+                        <span className="inline-flex items-center gap-1 text-[10px] ml-auto sm:ml-0">
+                          {textCount > 0 && <span className="inline-flex items-center justify-center h-4 min-w-[16px] rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">{textCount}</span>}
+                          {voiceCount > 0 && <span className="inline-flex items-center gap-0.5 text-muted-foreground"><Mic className="h-3 w-3" />{voiceCount}</span>}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-2">
+                      <span className="text-sm font-medium truncate group-hover:text-primary">{t.title}</span>
+                      <span className="text-[10px] text-muted-foreground truncate">{assigneeNames}{t.deadline ? ` · ${formatDate(t.deadline)}` : ""}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <TaskNotePanel taskId={t.id} notes={t.cboNotes.map(({ audioBytes, ...n }: any) => ({ ...n, audioBase64: audioBytes ? Buffer.from(audioBytes).toString("base64") : null }))} readOnly />
+                  </div>
                 </div>
               </Link>
             );

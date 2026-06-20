@@ -10,11 +10,20 @@ export default async function ExternalOverviewPage() {
   const user = await validateToken(token);
   if (!user) redirect("/external?error=invalid-token");
 
-  const assignments = await prisma.taskAssignment.findMany({
+  // Individual assignments
+  const individualAssignments = await prisma.taskAssignment.findMany({
     where: { memberId: user.memberId },
     include: { task: { select: { status: true, priority: { select: { code: true, colorHex: true } } } } },
   });
 
+  // Team assignments (exclude already individually assigned)
+  const individualTaskIds = individualAssignments.map((a) => a.taskId);
+  const teamAssignments = await prisma.taskTeamAssignment.findMany({
+    where: { teamId: user.teamId, taskId: { notIn: individualTaskIds } },
+    include: { task: { select: { status: true, priority: { select: { code: true, colorHex: true } } } } },
+  });
+
+  const assignments = [...individualAssignments, ...teamAssignments];
   const total = assignments.length;
   const statusMap: Record<string, number> = {};
   const priorityMap: Record<string, number> = {};
