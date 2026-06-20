@@ -25,17 +25,6 @@ function parseIdList(value: string): string[] {
   return value ? value.split(",").map((id) => id.trim()).filter(Boolean) : [];
 }
 
-function interventionColor(flag: InterventionFlag) {
-  if (flag === "YES") return "#dc2626";
-  if (flag === "ONLY_IF_DELAYED") return "#2563eb";
-  return "#16a34a";
-}
-function interventionLabel(flag: InterventionFlag) {
-  if (flag === "YES") return "Yes";
-  if (flag === "ONLY_IF_DELAYED") return "Only if delayed";
-  return "No";
-}
-
 export async function updateTaskAction(taskId: string, formData: FormData): Promise<UpdateTaskResult> {
   const authed = await checkSm(); if (!authed.ok) return { success: false, error: authed.error };
   const existing = await prisma.task.findUnique({ where: { id: taskId }, include: { vertical: true, priority: true, teamAssignments: { include: { team: true } } } });
@@ -103,12 +92,6 @@ async function sendEditEmail(
   for (const m of await membersOf(bccTeamIds)) bccAll.push({ email: m.email, name: m.name });
   for (const m of await membersById(bccMemberIds)) bccAll.push({ email: m.email, name: m.name });
 
-  const toEmails = toMembers.map((m) => m.email);
-  const ccEmails = ccAll.map((m) => m.email);
-  const bccEmails = bccAll.map((m) => m.email);
-
-  if (toEmails.length === 0) return;
-
   const toTokenMap = new Map<string, string>();
   for (const m of toMembers) {
     const member = await prisma.teamMember.findFirst({ where: { email: m.email, active: true } });
@@ -118,8 +101,8 @@ async function sendEditEmail(
   const priorityDisplay = `${existing.priority.code} — ${existing.priority.label}`;
   const diffLines = diffs.length > 0 ? diffs.map((d) => `<li>${d}</li>`).join("") : "<li>Fields updated by ${authed.userName}</li>";
 
-  const subject = `[SCP] Task Updated: ${existing.code} — ${existing.title}`;
-  const html = `
+  // Shared info block (no button)
+  const infoBlock = `
     <h2 style="margin-bottom:12px">Task Updated</h2>
     <p style="margin-bottom:16px;color:#374151">The following task has been updated:</p>
     <table style="border-collapse:collapse;width:100%;max-width:600px;font-size:14px">
@@ -130,18 +113,36 @@ async function sendEditEmail(
     </table>
     ${diffs.length > 0 ? `<div style="margin-top:14px"><div style="font-weight:600;font-size:13px;margin-bottom:6px">Changes:</div><ul style="margin:0;padding-left:20px;font-size:13px;color:#374151">${diffLines}</ul></div>` : ""}
     ${extraMessage ? `<div style="margin-top:14px;padding:12px 14px;background:#f3f4f6;border-radius:6px;border-left:3px solid #4f46e5"><div style="font-weight:600;font-size:12px;color:#4f46e5;margin-bottom:6px">Message from ${authed.userName}:</div><div style="font-style:italic;color:#374151">${extraMessage.replace(/\n/g, "<br>")}</div></div>` : ""}
-    <p style="margin-top:20px">
-      <a href="${appUrl}/external/token?token=\${TOKEN_PLACEHOLDER}&taskId=${taskId}" style="background:#4f46e5;color:white;padding:10px 24px;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;display:inline-block">
-        View Task →
-      </a>
-    </p>
   `;
 
-  for (const e of toEmails) {
-    const token = toTokenMap.get(e);
-    const personalizedHtml = html.replace("${TOKEN_PLACEHOLDER}", token || "");
-    const result = await sendEmail({ to: e, cc: ccEmails.length > 0 && toEmails.indexOf(e) === 0 ? ccEmails : [], bcc: bccEmails.length > 0 && toEmails.indexOf(e) === 0 ? bccEmails : [], subject, html: personalizedHtml });
-    await prisma.emailLog.create({ data: { taskId, recipient: e, subject, status: result.success ? "sent" : "failed", errorMsg: result.error || null, ...(result.messageId ? { listmonkId: result.messageId } : {}) } });
+  const viewTaskButton = `<p style="margin-top:20px">
+    <a href="${appUrl}/external/token?token=\${TOKEN_PLACEHOLDER}&taskId=${taskId}" style="background:#4f46e5;color:white;padding:10px 24px;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;display:inline-block">View Task →</a>
+  </p>`;
+
+  const subject = `[SCP] Task Updated: ${existing.code} — ${existing.title}`;
+
+  // ── TO emails: info + personalized token + View Task button ──
+  if (toMembers.length > 0) {
+    for (const m of toMembers) {
+      const token = toTokenMap.get(m.email) || "";
+      await sendEmail({ to: m.email, subject, html: infoBlock + viewTaskButton.replace("${TOKEN_PLACEHOLDER}", token) });
+      await prisma.emailLog.create({ data: { taskId, recipient: m.email, subject, status: "sent" } });
+    }
+  }
+
+  // ── CC email: info block only, NO button ──
+  if (ccAll.length > 0) {
+    const ccEmails = ccAll.map((m) => m.email);
+    await sendEmail({ to: ccEmails[0], cc: ccEmails.slice(1), subject: `[CC] ${subject}`, html: infoBlock });
+    for (const e of ccEmails) await prisma.emailLog.create({ data: { taskId, recipient: e, subject, status: "sent" } });
+  }
+
+  // ── BCC emails: info block only, NO button ──
+  if (bccAll.length > 0) {
+    for (const m of bccAll) {
+      await sendEmail({ to: m.email, subject: `[FYI] ${subject}`, html: infoBlock });
+      await prisma.emailLog.create({ data: { taskId, recipient: m.email, subject, status: "sent" } });
+    }
   }
 }
 

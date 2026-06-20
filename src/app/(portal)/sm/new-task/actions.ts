@@ -56,22 +56,14 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
   const bccMemberIds = parseIdList(String(formData.get("bccMemberIds") || ""));
 
   const teamSendEmailMap = new Map<string, boolean>();
-  for (const tid of teamIds) {
-    const sendVal = formData.get(`teamsend_${tid}`);
-    teamSendEmailMap.set(tid, sendVal !== "false");
-  }
+  for (const tid of teamIds) { const sendVal = formData.get(`teamsend_${tid}`); teamSendEmailMap.set(tid, sendVal !== "false"); }
   const memberSendEmailMap = new Map<string, boolean>();
-  for (const mid of memberIds) {
-    const sendVal = formData.get(`membersend_${mid}`);
-    memberSendEmailMap.set(mid, sendVal !== "false");
-  }
+  for (const mid of memberIds) { const sendVal = formData.get(`membersend_${mid}`); memberSendEmailMap.set(mid, sendVal !== "false"); }
 
   if (!title)      return { success: false, error: "Task title is required." };
   if (!verticalId) return { success: false, error: "Please select a vertical." };
   if (!priorityId) return { success: false, error: "Please select a priority." };
-  if (teamIds.length === 0 && memberIds.length === 0) {
-    return { success: false, error: "Please assign at least one team or member." };
-  }
+  if (teamIds.length === 0 && memberIds.length === 0) return { success: false, error: "Please assign at least one team or member." };
 
   const vertical = await prisma.vertical.findUnique({ where: { id: verticalId } });
   if (!vertical) return { success: false, error: "Selected vertical was not found." };
@@ -87,97 +79,51 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
       created = await prisma.$transaction(async (tx) => {
         const code = await computeNextTaskCode(tx, verticalId, vertical.code);
         const task = await tx.task.create({
-          data: {
-            code, title, verticalId, priorityId,
-            createdById: session.user.id,
-            deadline: deadlineStr ? new Date(deadlineStr) : null,
-            frequency, source, expectedOutput, supportNeeded, nextAction, intervention,
-            lastUpdateAt: new Date(),
-          },
+          data: { code, title, verticalId, priorityId, createdById: session.user.id, deadline: deadlineStr ? new Date(deadlineStr) : null, frequency, source, expectedOutput, supportNeeded, nextAction, intervention, lastUpdateAt: new Date() },
         });
-
-        if (teamIds.length > 0) {
-          await tx.taskTeamAssignment.createMany({
-            data: teamIds.map((tid) => ({ taskId: task.id, teamId: tid, sendEmail: teamSendEmailMap.get(tid) ?? true })),
-          });
-        }
-        if (memberIds.length > 0) {
-          await tx.taskAssignment.createMany({
-            data: memberIds.map((mid) => ({ taskId: task.id, memberId: mid, sendEmail: memberSendEmailMap.get(mid) ?? true })),
-          });
-        }
+        if (teamIds.length > 0) await tx.taskTeamAssignment.createMany({ data: teamIds.map((tid) => ({ taskId: task.id, teamId: tid, sendEmail: teamSendEmailMap.get(tid) ?? true })) });
+        if (memberIds.length > 0) await tx.taskAssignment.createMany({ data: memberIds.map((mid) => ({ taskId: task.id, memberId: mid, sendEmail: memberSendEmailMap.get(mid) ?? true })) });
         return task;
       }, { maxWait: 30_000, timeout: 30_000 });
       lastErr = null; break;
     } catch (err: unknown) {
       lastErr = err;
       if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "P2002") continue;
-      console.error("[createTaskAction] DB error", err);
       return { success: false, error: friendlyPrismaError(err) ?? "Could not create the task." };
     }
   }
-  if (!created) {
-    console.error("[createTaskAction] exhausted retries", lastErr);
-    return { success: false, error: "Could not generate a unique task code." };
-  }
+  if (!created) return { success: false, error: "Could not generate a unique task code." };
 
   revalidatePath("/sm"); revalidatePath("/sm/tasks"); revalidatePath("/cbo");
 
-  // ── Resolve all recipients ────────────────────────────────────────────
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   const priorityDisplay = `${priority.code} — ${priority.label}`;
 
-  // Resolve member emails from team IDs (for TO, CC, BCC)
-  const membersOf = async (tids: string[]): Promise<{ id: string; name: string; email: string; teamId: string }[]> => {
-    if (tids.length === 0) return [];
-    return prisma.teamMember.findMany({
-      where: { teamId: { in: tids }, active: true },
-      select: { id: true, name: true, email: true, teamId: true },
-    });
-  };
-  const membersById = async (mids: string[]): Promise<{ id: string; name: string; email: string }[]> => {
-    if (mids.length === 0) return [];
-    return prisma.teamMember.findMany({
-      where: { id: { in: mids }, active: true },
-      select: { id: true, name: true, email: true },
-    });
-  };
+  const membersOf = async (tids: string[]): Promise<{ id: string; name: string; email: string; teamId: string }[]> =>
+    tids.length === 0 ? [] : prisma.teamMember.findMany({ where: { teamId: { in: tids }, active: true }, select: { id: true, name: true, email: true, teamId: true } });
+  const membersById = async (mids: string[]): Promise<{ id: string; name: string; email: string }[]> =>
+    mids.length === 0 ? [] : prisma.teamMember.findMany({ where: { id: { in: mids }, active: true }, select: { id: true, name: true, email: true } });
 
   const toMembers: { email: string; name: string }[] = [];
-  for (const m of await membersOf(teamIds)) {
-    const sendForThisTeam = teamSendEmailMap.get(m.teamId) ?? true;
-    if (sendForThisTeam) toMembers.push({ email: m.email, name: m.name });
-  }
-  for (const m of await membersById(memberIds)) {
-    if (memberSendEmailMap.get(m.id) !== false) toMembers.push({ email: m.email, name: m.name });
-  }
+  for (const m of await membersOf(teamIds)) { if (teamSendEmailMap.get(m.teamId) ?? true) toMembers.push({ email: m.email, name: m.name }); }
+  for (const m of await membersById(memberIds)) { if (memberSendEmailMap.get(m.id) !== false) toMembers.push({ email: m.email, name: m.name }); }
 
-  // CC recipients
   const ccAll: { email: string; name: string }[] = [];
   for (const m of await membersOf(ccTeamIds)) ccAll.push({ email: m.email, name: m.name });
   for (const m of await membersById(ccMemberIds)) ccAll.push({ email: m.email, name: m.name });
 
-  // BCC recipients
   const bccAll: { email: string; name: string }[] = [];
   for (const m of await membersOf(bccTeamIds)) bccAll.push({ email: m.email, name: m.name });
   for (const m of await membersById(bccMemberIds)) bccAll.push({ email: m.email, name: m.name });
 
-  // Generate tokens for each TO recipient
   const toTokenMap = new Map<string, string>();
   for (const m of toMembers) {
     const member = await prisma.teamMember.findFirst({ where: { email: m.email, active: true } });
-    if (member) {
-      toTokenMap.set(m.email, await getOrCreateToken(member.id, created.id));
-    }
+    if (member) toTokenMap.set(m.email, await getOrCreateToken(member.id, created.id));
   }
 
-  const toEmails = toMembers.map((m) => m.email);
-  const ccEmails = ccAll.map((m) => m.email);
-  const bccEmails = bccAll.map((m) => m.email);
-
-  // Build email
-  const subject = `[SCP] New Task: ${created.code} — ${created.title}`;
-  const html = `
+  // Shared email info block (no button)
+  const infoBlock = `
     <h2 style="margin-bottom:12px">New Task Assigned</h2>
     <p style="margin-bottom:16px;color:#374151">The following task has been assigned to you:</p>
     <table style="border-collapse:collapse;width:100%;max-width:600px;font-size:14px">
@@ -189,20 +135,35 @@ export async function createTaskAction(formData: FormData): Promise<CreateTaskRe
       <tr><td style="padding:8px 10px;font-weight:bold;background:#f9fafb;border:1px solid #e5e7eb">Dr. BN Intervention</td><td style="padding:8px 10px;border:1px solid #e5e7eb"><span style="font-weight:700;color:${interventionColor(intervention)}">${interventionLabel(intervention)}</span></td></tr>
     </table>
     ${extraMessage ? `<div style="margin-top:16px;padding:12px 14px;background:#f3f4f6;border-radius:6px;border-left:3px solid #4f46e5"><div style="font-weight:600;font-size:12px;color:#4f46e5;margin-bottom:6px">Message:</div><div style="font-style:italic;color:#374151">${extraMessage.replace(/\n/g, "<br>")}</div></div>` : ""}
-    <p style="margin-top:20px">
-      <a href="${appUrl}/external/token?token=\${TOKEN_PLACEHOLDER}&taskId=${created.id}" style="background:#4f46e5;color:white;padding:10px 24px;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;display:inline-block">
-        View Task →
-      </a>
-    </p>
   `;
 
-  if (toEmails.length > 0) {
-    // Send individual emails with personalized tokens
-    for (const e of toEmails) {
-      const token = toTokenMap.get(e);
-      const personalizedHtml = html.replace("${TOKEN_PLACEHOLDER}", token || "");
-      const result = await sendEmail({ to: e, cc: ccEmails.length > 0 && toEmails.indexOf(e) === 0 ? ccEmails : [], bcc: bccEmails.length > 0 && toEmails.indexOf(e) === 0 ? bccEmails : [], subject, html: personalizedHtml });
-      await prisma.emailLog.create({ data: { taskId: created.id, recipient: e, subject, status: result.success ? "sent" : "failed", errorMsg: result.error || null, ...(result.messageId ? { listmonkId: result.messageId } : {}) } });
+  const viewTaskButton = `<p style="margin-top:20px">
+    <a href="${appUrl}/external/token?token=\${TOKEN_PLACEHOLDER}&taskId=${created.id}" style="background:#4f46e5;color:white;padding:10px 24px;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;display:inline-block">View Task →</a>
+  </p>`;
+
+  const subject = `[SCP] New Task: ${created.code} — ${created.title}`;
+
+  // ── TO emails: info + personalized token + View Task button ──
+  if (toMembers.length > 0) {
+    for (const m of toMembers) {
+      const token = toTokenMap.get(m.email) || "";
+      await sendEmail({ to: m.email, subject, html: infoBlock + viewTaskButton.replace("${TOKEN_PLACEHOLDER}", token) });
+      await prisma.emailLog.create({ data: { taskId: created.id, recipient: m.email, subject, status: "sent" } });
+    }
+  }
+
+  // ── CC email: info block only, NO button, sent to all CC at once ──
+  if (ccAll.length > 0) {
+    const ccEmails = ccAll.map((m) => m.email);
+    await sendEmail({ to: ccEmails[0], cc: ccEmails.slice(1), subject: `[CC] ${subject}`, html: infoBlock });
+    for (const e of ccEmails) await prisma.emailLog.create({ data: { taskId: created.id, recipient: e, subject, status: "sent" } });
+  }
+
+  // ── BCC emails: info block only, NO button, individual sends ──
+  if (bccAll.length > 0) {
+    for (const m of bccAll) {
+      await sendEmail({ to: m.email, subject: `[FYI] ${subject}`, html: infoBlock });
+      await prisma.emailLog.create({ data: { taskId: created.id, recipient: m.email, subject, status: "sent" } });
     }
   }
 
