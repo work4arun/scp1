@@ -106,7 +106,6 @@ async function sendEditEmail(
   const toEmails = toMembers.map((m) => m.email);
   const ccEmails = ccAll.map((m) => m.email);
   const bccEmails = bccAll.map((m) => m.email);
-  const hasCCBCC = ccAll.length > 0 || bccAll.length > 0;
 
   if (toEmails.length === 0) return;
 
@@ -131,11 +130,11 @@ async function sendEditEmail(
     </table>
     ${diffs.length > 0 ? `<div style="margin-top:14px"><div style="font-weight:600;font-size:13px;margin-bottom:6px">Changes:</div><ul style="margin:0;padding-left:20px;font-size:13px;color:#374151">${diffLines}</ul></div>` : ""}
     ${extraMessage ? `<div style="margin-top:14px;padding:12px 14px;background:#f3f4f6;border-radius:6px;border-left:3px solid #4f46e5"><div style="font-weight:600;font-size:12px;color:#4f46e5;margin-bottom:6px">Message from ${authed.userName}:</div><div style="font-style:italic;color:#374151">${extraMessage.replace(/\n/g, "<br>")}</div></div>` : ""}
-    ${!hasCCBCC ? `<p style="margin-top:20px">
+    <p style="margin-top:20px">
       <a href="${appUrl}/external/token?token=\${TOKEN_PLACEHOLDER}&taskId=${taskId}" style="background:#4f46e5;color:white;padding:10px 24px;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;display:inline-block">
         View Task →
       </a>
-    </p>` : ""}
+    </p>
   `;
 
   for (const e of toEmails) {
