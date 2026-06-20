@@ -11,10 +11,22 @@ export async function sendMessageAction(formData: FormData) {
 
   if (!taskId || !memberId) return { success: false };
 
-  const assignment = await prisma.taskAssignment.findUnique({
+  // Check individual assignment
+  const individualAssignment = await prisma.taskAssignment.findUnique({
     where: { taskId_memberId: { taskId, memberId } },
   });
-  if (!assignment) return { success: false };
+  if (!individualAssignment) {
+    // Check team assignment — user in a team assigned to this task can also chat
+    const member = await prisma.teamMember.findUnique({ where: { id: memberId }, select: { teamId: true } });
+    if (member) {
+      const teamAssignment = await prisma.taskTeamAssignment.findUnique({
+        where: { taskId_teamId: { taskId, teamId: member.teamId } },
+      });
+      if (!teamAssignment) return { success: false };
+    } else {
+      return { success: false };
+    }
+  }
 
   let audioBytes: Buffer | null = null;
   if (audioFile && audioFile.size > 0) {
