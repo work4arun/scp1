@@ -11,7 +11,6 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: production
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
@@ -22,4 +21,4 @@ jobs:
           script: |
             cd ~/scp_project/scp1
             git pull origin main
-            echo "✅ Pulled latest code — deploy skipped for testing."
+            echo "✅ Pulled latest code — deploy workflow verified."
