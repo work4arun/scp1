@@ -21,4 +21,5 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             cd ~/scp_project/scp1
-            GIT_BRANCH=main bash deploy-all.sh
+            git pull origin main
+            echo "✅ Pulled latest code — deploy skipped for testing."
