@@ -9,6 +9,7 @@ import { formatRelative, formatDate } from "@/lib/utils";
 import { Layers, MessageSquare, Mic } from "lucide-react";
 import Link from "next/link";
 import { TaskStatusFilter } from "./overview-status-filter";
+import { TaskVerticalFilter } from "./overview-vertical-filter";
 import { TaskNotePanel } from "./task-note-panel";
 
 export default async function CboHome({ searchParams }: { searchParams: Record<string, string | undefined> }) {
@@ -17,12 +18,14 @@ export default async function CboHome({ searchParams }: { searchParams: Record<s
 
   const selectedStatus = searchParams.status || "";
   const selectedPriority = searchParams.priority || "";
+  const selectedVertical = searchParams.vertical || "";
 
   const where: Record<string, unknown> = { status: { not: "DROPPED" } as const };
   if (selectedStatus) where.status = selectedStatus;
   if (selectedPriority) where.priority = { code: selectedPriority };
+  if (selectedVertical) where.verticalId = selectedVertical;
 
-  const [taskCount, priorityStats, tasks] = await Promise.all([
+  const [taskCount, priorityStats, tasks, verticals] = await Promise.all([
     prisma.task.count({ where: { status: { not: "DROPPED" } } }),
     Promise.all([
       prisma.task.count({ where: { priority: { code: "P1" }, status: { not: "DROPPED" } } }).then((c) => ({ code: "P1", label: "Critical", count: c })),
@@ -43,9 +46,15 @@ export default async function CboHome({ searchParams }: { searchParams: Record<s
         _count: { select: { cboNotes: true } },
       },
     }),
+    prisma.vertical.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
   ]);
 
-  const filterLabel = selectedStatus ? `Status: ${selectedStatus.replace(/_/g, " ")}` : selectedPriority ? `Priority: ${selectedPriority}` : "";
+  const selectedVerticalName = verticals.find((v) => v.id === selectedVertical)?.code;
+  const filterLabelParts: string[] = [];
+  if (selectedStatus) filterLabelParts.push(`Status: ${selectedStatus.replace(/_/g, " ")}`);
+  if (selectedPriority) filterLabelParts.push(`Priority: ${selectedPriority}`);
+  if (selectedVerticalName) filterLabelParts.push(`Vertical: ${selectedVerticalName}`);
+  const filterLabel = filterLabelParts.join(" · ");
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -53,7 +62,7 @@ export default async function CboHome({ searchParams }: { searchParams: Record<s
 
       {/* Compact button-style summary chips */}
       <div className="flex flex-wrap gap-2">
-        <Link href="/cbo" className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${!selectedPriority && !selectedStatus ? "border-primary/60 ring-2 ring-primary/20 bg-primary/5" : "border-border hover:bg-accent"}`}>
+        <Link href="/cbo" className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${!selectedPriority && !selectedStatus && !selectedVertical ? "border-primary/60 ring-2 ring-primary/20 bg-primary/5" : "border-border hover:bg-accent"}`}>
           <Layers className="h-3.5 w-3.5 text-primary" />
           <span className="text-muted-foreground">Total</span>
           <span className="font-bold">{taskCount}</span>
@@ -67,13 +76,14 @@ export default async function CboHome({ searchParams }: { searchParams: Record<s
         ))}
       </div>
 
-      {/* Status filter */}
-      <div className="flex items-center gap-3">
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2"><span className="text-xs font-medium text-muted-foreground">Status:</span><TaskStatusFilter current={selectedStatus} priority={selectedPriority} /></div>
+        <div className="flex items-center gap-2"><span className="text-xs font-medium text-muted-foreground">Vertical:</span><TaskVerticalFilter current={selectedVertical} status={selectedStatus} priority={selectedPriority} verticals={verticals.map((v) => ({ id: v.id, code: v.code, name: v.name }))} /></div>
         {filterLabel && <div className="flex items-center gap-2"><span className="text-xs font-medium text-primary bg-primary/10 rounded px-2 py-0.5">{filterLabel}</span><Link href="/cbo" className="text-xs text-muted-foreground hover:text-foreground">Clear</Link></div>}
       </div>
 
-      {/* Task list - compact button-style rows with chat button */}
+      {/* Task list */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm">Tasks{tasks.length > 0 ? ` (${tasks.length})` : ""}</CardTitle>
@@ -94,7 +104,6 @@ export default async function CboHome({ searchParams }: { searchParams: Record<s
                       <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ backgroundColor: t.vertical.colorHex }}>{t.vertical.name}</span>
                       <PriorityBadge code={t.priority.code} />
                       <StatusBadge status={t.status} />
-                      {/* Chat counts inline on mobile */}
                       {hasChat && (
                         <span className="inline-flex items-center gap-1 text-[10px] ml-auto sm:ml-0">
                           {textCount > 0 && <span className="inline-flex items-center justify-center h-4 min-w-[16px] rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">{textCount}</span>}

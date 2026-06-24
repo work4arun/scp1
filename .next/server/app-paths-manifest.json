@@ -1,8 +1,7 @@
 {
-  "/(portal)/sm/tasks/[id]/page": "app/(portal)/sm/tasks/[id]/page.js",
-  "/(portal)/sm/tasks/[id]/edit/page": "app/(portal)/sm/tasks/[id]/edit/page.js",
-  "/(portal)/sm/new-task/page": "app/(portal)/sm/new-task/page.js",
+  "/page": "app/page.js",
+  "/login/page": "app/login/page.js",
+  "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
   "/(portal)/sm/page": "app/(portal)/sm/page.js",
-  "/(portal)/sm/tasks/page": "app/(portal)/sm/tasks/page.js",
-  "/(portal)/admin/verticals/page": "app/(portal)/admin/verticals/page.js"
+  "/(portal)/cbo/page": "app/(portal)/cbo/page.js"
 }
