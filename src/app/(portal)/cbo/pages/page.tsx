@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { isCBO } from "@/lib/rbac";
+import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/page-header";
 import { StaticPagesClient } from "@/app/(portal)/sm/pages/static-pages-client";
 
