@@ -20,6 +20,7 @@ import {
   StickyNote,
   ChevronDown,
   ShieldCheck,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SystemRole } from "@prisma/client";
@@ -53,6 +54,7 @@ function navSectionsFor(role: SystemRole): NavSection[] {
         { href: "/cbo", label: "Overview", icon: LayoutDashboard },
         { href: "/cbo/tasks", label: "All Tasks", icon: ListChecks },
         { href: "/cbo/parked", label: "Parking Lot", icon: Archive },
+        { href: "/cbo/pages", label: "Static Pages", icon: FileText },
       ],
     }];
   }
@@ -66,6 +68,7 @@ function navSectionsFor(role: SystemRole): NavSection[] {
         { href: "/sm/new-task", label: "New Task", icon: Inbox },
         { href: "/sm/notes", label: "Notes from CBO", icon: StickyNote },
         { href: "/sm/parked", label: "Parking Lot", icon: Archive },
+        { href: "/sm/pages", label: "Static Pages", icon: FileText },
       ],
     },
     { label: "Super Admin", items: ADMIN_NAV_ITEMS, collapsible: true },

@@ -1,36 +1,14 @@
 {
   "node": {
-    "1e9770ce846c1808bdd4b5870e44ce7b16365caa": {
+    "6e5e198dc2a6e5228c7ec044ac6ccd95e2666dea": {
       "workers": {
-        "app/(portal)/sm/page": "(action-browser)/./node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22D%3A%5C%5Ccollege-projects%5C%5Cstrategic-control-system%5C%5Csrc%5C%5Capp%5C%5C(portal)%5C%5Ccbo%5C%5Cnote-actions.ts%22%2C%5B%22addTextNoteAction%22%2C%22addVoiceNoteAction%22%2C%22deleteNoteAction%22%5D%5D%5D&__client_imported__=true!",
-        "app/(portal)/cbo/page": "(action-browser)/./node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22D%3A%5C%5Ccollege-projects%5C%5Cstrategic-control-system%5C%5Csrc%5C%5Capp%5C%5C(portal)%5C%5Ccbo%5C%5Cnote-actions.ts%22%2C%5B%22addTextNoteAction%22%2C%22addVoiceNoteAction%22%2C%22deleteNoteAction%22%5D%5D%5D&__client_imported__=true!"
+        "app/(portal)/cbo/pages/page": "(action-browser)/./node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22D%3A%5C%5Ccollege-projects%5C%5Cstrategic-control-system%5C%5Csrc%5C%5Capp%5C%5C(portal)%5C%5Csm%5C%5Cpages%5C%5Cactions.ts%22%2C%5B%22deletePageAction%22%5D%5D%5D&__client_imported__=true!"
       },
       "layer": {
-        "app/(portal)/sm/page": "action-browser",
-        "app/(portal)/cbo/page": "action-browser"
-      }
-    },
-    "32115f4068bbad37ae53298bfe60315b468c79e3": {
-      "workers": {
-        "app/(portal)/sm/page": "(action-browser)/./node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22D%3A%5C%5Ccollege-projects%5C%5Cstrategic-control-system%5C%5Csrc%5C%5Capp%5C%5C(portal)%5C%5Ccbo%5C%5Cnote-actions.ts%22%2C%5B%22addTextNoteAction%22%2C%22addVoiceNoteAction%22%2C%22deleteNoteAction%22%5D%5D%5D&__client_imported__=true!",
-        "app/(portal)/cbo/page": "(action-browser)/./node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22D%3A%5C%5Ccollege-projects%5C%5Cstrategic-control-system%5C%5Csrc%5C%5Capp%5C%5C(portal)%5C%5Ccbo%5C%5Cnote-actions.ts%22%2C%5B%22addTextNoteAction%22%2C%22addVoiceNoteAction%22%2C%22deleteNoteAction%22%5D%5D%5D&__client_imported__=true!"
-      },
-      "layer": {
-        "app/(portal)/sm/page": "action-browser",
-        "app/(portal)/cbo/page": "action-browser"
-      }
-    },
-    "f5e2883ad8ef7793297b9099196ce61c8093a03d": {
-      "workers": {
-        "app/(portal)/sm/page": "(action-browser)/./node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22D%3A%5C%5Ccollege-projects%5C%5Cstrategic-control-system%5C%5Csrc%5C%5Capp%5C%5C(portal)%5C%5Ccbo%5C%5Cnote-actions.ts%22%2C%5B%22addTextNoteAction%22%2C%22addVoiceNoteAction%22%2C%22deleteNoteAction%22%5D%5D%5D&__client_imported__=true!",
-        "app/(portal)/cbo/page": "(action-browser)/./node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22D%3A%5C%5Ccollege-projects%5C%5Cstrategic-control-system%5C%5Csrc%5C%5Capp%5C%5C(portal)%5C%5Ccbo%5C%5Cnote-actions.ts%22%2C%5B%22addTextNoteAction%22%2C%22addVoiceNoteAction%22%2C%22deleteNoteAction%22%5D%5D%5D&__client_imported__=true!"
-      },
-      "layer": {
-        "app/(portal)/sm/page": "action-browser",
-        "app/(portal)/cbo/page": "action-browser"
+        "app/(portal)/cbo/pages/page": "action-browser"
       }
     }
   },
   "edge": {},
-  "encryptionKey": "f4nNAH9CHnInCacUZ065/PZuSjON3xrHRnDYMkjzUmk="
+  "encryptionKey": "xhkPrYFASEvSJ0YwTKagFVUgITJAPyuM2L133dW8tSs="
 }

@@ -298,6 +298,21 @@ model Task {
   @@index([droppedAt])
 }
 
+model StaticPage {
+  id          String   @id @default(cuid())
+  pageName    String
+  fileName    String
+  fileType    String   // "pdf" | "html" | "ppt"
+  fileData    Bytes
+  verticalId  String?
+  uploadedBy  String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([verticalId])
+  @@index([createdAt])
+}
+
 model CboNote {
   id           String   @id @default(cuid())
   taskId       String
