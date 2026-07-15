@@ -366,7 +366,7 @@ server {
         proxy_buffering    off;
     }
 
-    client_max_body_size 25m;
+    client_max_body_size 1g;
 }
 ```
 

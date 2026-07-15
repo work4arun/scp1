@@ -314,7 +314,7 @@ server {
         proxy_set_header   Connection        "upgrade";
 
         proxy_read_timeout 60s;
-        client_max_body_size 10m;
+        client_max_body_size 1g;
     }
 }
 EOF

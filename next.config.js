@@ -8,7 +8,7 @@ const nextConfig = {
   assetPrefix: basePath || undefined,
   experimental: {
     serverActions: {
-      bodySizeLimit: "5mb",
+      bodySizeLimit: "1gb",
     },
   },
 };

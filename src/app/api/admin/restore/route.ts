@@ -26,9 +26,9 @@ import bcrypt from "bcryptjs";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Allow files up to 50 MB. Adjust if your dataset is larger; the limit is a
+// Allow files up to 1 GB. Adjust if your dataset is larger; the limit is a
 // safety net against accidental uploads.
-const MAX_BYTES = 50 * 1024 * 1024;
+const MAX_BYTES = 1024 * 1024 * 1024;
 
 export async function POST(req: Request) {
   const session = await auth();
