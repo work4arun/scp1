@@ -32,7 +32,36 @@ export default async function EmailsPage() {
       {logs.length === 0 ? (
         <p className="text-sm text-muted-foreground">No email logs yet. Emails are sent when tasks are created and assigned to teams/members.</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
+        <>
+        {/* Mobile — one card per log; a 5-column table forces sideways scrolling on a phone. */}
+        <div className="space-y-2 md:hidden">
+          {logs.map((log) => (
+            <div key={log.id} className="rounded-lg border border-border p-3 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-1.5">
+                <span className="font-mono text-[11px] break-all">{log.recipient}</span>
+                <span
+                  className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                    log.status === "sent"
+                      ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-400"
+                      : log.status === "pending"
+                      ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-400"
+                      : "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-400"
+                  }`}
+                >
+                  {log.status}
+                </span>
+              </div>
+              <div className="mt-1 break-words font-medium">{log.subject}</div>
+              {log.errorMsg && <p className="mt-0.5 text-[10px] text-destructive break-words">{log.errorMsg}</p>}
+              <div className="mt-1 break-words text-[11px] text-muted-foreground">
+                {log.task ? `${log.task.code} — ${log.task.title}` : "—"}
+              </div>
+              <div className="mt-0.5 text-[10px] text-muted-foreground">{new Date(log.createdAt).toLocaleString()}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="hidden overflow-x-auto rounded-lg border border-border md:block">
           <table className="w-full text-xs">
             <thead className="bg-muted">
               <tr>
@@ -69,6 +98,7 @@ export default async function EmailsPage() {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );

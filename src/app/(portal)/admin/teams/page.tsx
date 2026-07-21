@@ -13,7 +13,8 @@ export default async function TeamsAdmin() {
   const teams = await prisma.team.findMany({
     orderBy: { name: "asc" },
     include: {
-      members: { orderBy: { sortOrder: "asc" } },
+      // Head first, then the configured order — the head is the name the CBO views show.
+      members: { orderBy: [{ isHead: "desc" }, { sortOrder: "asc" }] },
       taskAssignments: true,
     },
   });
@@ -48,6 +49,7 @@ export default async function TeamsAdmin() {
                   email: m.email,
                   designation: m.designation,
                   sortOrder: m.sortOrder,
+                  isHead: m.isHead,
                 })),
               }}
             />

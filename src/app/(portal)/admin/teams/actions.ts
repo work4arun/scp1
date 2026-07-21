@@ -182,6 +182,44 @@ export async function updateMemberAction(formData: FormData): Promise<MemberResu
   return { success: true };
 }
 
+/**
+ * Make a member the head of their team, or clear the flag if they already are.
+ *
+ * A team has at most one head. The DB can't express that (a partial unique index
+ * isn't reachable through `db push` here), so the demotion of the previous head
+ * and the promotion of the new one share a transaction — otherwise a failure
+ * between the two writes leaves the team with two heads, or none.
+ */
+export async function setTeamHeadAction(memberId: string): Promise<MemberResult> {
+  const authed = await ensureAdmin();
+  if (!authed.ok) return { success: false, error: authed.error };
+
+  try {
+    const member = await prisma.teamMember.findUnique({
+      where: { id: memberId },
+      select: { id: true, teamId: true, isHead: true },
+    });
+    if (!member) return { success: false, error: "Member not found." };
+
+    await prisma.$transaction(async (tx) => {
+      await tx.teamMember.updateMany({
+        where: { teamId: member.teamId, isHead: true },
+        data: { isHead: false },
+      });
+      if (!member.isHead) {
+        await tx.teamMember.update({ where: { id: memberId }, data: { isHead: true } });
+      }
+    });
+  } catch (err) {
+    console.error("[setTeamHeadAction] DB error", err);
+    return { success: false, error: friendlyPrismaError(err) ?? "Could not update the team head. Please try again." };
+  }
+
+  revalidatePath("/admin/teams");
+  revalidatePath("/cbo");
+  return { success: true };
+}
+
 export async function removeMemberAction(id: string): Promise<MemberResult> {
   const authed = await ensureAdmin();
   if (!authed.ok) return { success: false, error: authed.error };

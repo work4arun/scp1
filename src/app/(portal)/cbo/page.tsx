@@ -11,6 +11,8 @@ import Link from "next/link";
 import { TaskStatusFilter } from "./overview-status-filter";
 import { TaskVerticalFilter } from "./overview-vertical-filter";
 import { TaskNotePanel } from "./task-note-panel";
+import { DailyFollowUp } from "./daily-followup";
+import { monthRangeUtc, parseMonthKey } from "@/lib/followups";
 
 export default async function CboHome({ searchParams }: { searchParams: Record<string, string | undefined> }) {
   const session = await auth();
@@ -20,12 +22,18 @@ export default async function CboHome({ searchParams }: { searchParams: Record<s
   const selectedPriority = searchParams.priority || "";
   const selectedVertical = searchParams.vertical || "";
 
+  // Daily follow-up calendar: ?m=YYYY-MM picks the month, ?d=YYYY-MM-DD the open day.
+  const { year, month } = parseMonthKey(searchParams.m);
+  const selectedDay = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.d ?? "") ? searchParams.d! : null;
+  const followUpView = searchParams.fv === "vertical" ? "vertical" : "table";
+  const monthRange = monthRangeUtc(year, month);
+
   const where: Record<string, unknown> = { status: { not: "DROPPED" } as const };
   if (selectedStatus) where.status = selectedStatus;
   if (selectedPriority) where.priority = { code: selectedPriority };
   if (selectedVertical) where.verticalId = selectedVertical;
 
-  const [taskCount, priorityStats, tasks, verticals] = await Promise.all([
+  const [taskCount, priorityStats, tasks, verticals, monthUpdates] = await Promise.all([
     prisma.task.count({ where: { status: { not: "DROPPED" } } }),
     Promise.all([
       prisma.task.count({ where: { priority: { code: "P1" }, status: { not: "DROPPED" } } }).then((c) => ({ code: "P1", label: "Critical", count: c })),
@@ -47,6 +55,25 @@ export default async function CboHome({ searchParams }: { searchParams: Record<s
       },
     }),
     prisma.vertical.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
+    // Every SM update filed in the displayed month — the calendar buckets these by
+    // local date. The range is padded a day either side; `dayKey()` does the exact
+    // timezone bucketing (see lib/followups.ts).
+    prisma.taskUpdate.findMany({
+      where: { createdAt: { gte: monthRange.gte, lt: monthRange.lt }, task: { status: { not: "DROPPED" } } },
+      orderBy: { createdAt: "asc" },
+      include: {
+        author: { select: { name: true } },
+        task: {
+          select: {
+            id: true, code: true, title: true, status: true, vertical: true,
+            priority: { select: { code: true } },
+            // Assigned teams carry the owner column; each team's head is the named person.
+            teamAssignments: { include: { team: { include: { members: { where: { isHead: true }, select: { name: true } } } } } },
+            assignees: { include: { member: { select: { name: true } } } },
+          },
+        },
+      },
+    }),
   ]);
 
   const selectedVerticalName = verticals.find((v) => v.id === selectedVertical)?.code;
@@ -59,6 +86,32 @@ export default async function CboHome({ searchParams }: { searchParams: Record<s
   return (
     <div className="space-y-4 animate-fade-in">
       <PageHeader title={`Good day, ${session.user.name?.split(" ")[0] || "Dr. BN"}`} description="Overview — monitor all tasks across verticals." />
+
+      {/* Date-wise follow-up register */}
+      <DailyFollowUp
+        entries={monthUpdates.map((u) => ({
+          id: u.id,
+          createdAt: u.createdAt,
+          note: u.note,
+          newStatus: u.newStatus,
+          authorName: u.author.name,
+          task: {
+            id: u.task.id,
+            code: u.task.code,
+            title: u.task.title,
+            status: u.task.status,
+            vertical: { id: u.task.vertical.id, name: u.task.vertical.name, colorHex: u.task.vertical.colorHex, sortOrder: u.task.vertical.sortOrder },
+            priority: { code: u.task.priority.code },
+            teams: u.task.teamAssignments.map((ta) => ({ name: ta.team.name, head: ta.team.members[0]?.name ?? null })),
+            members: u.task.assignees.map((a) => a.member.name),
+          },
+        }))}
+        year={year}
+        month={month}
+        selectedDay={selectedDay}
+        view={followUpView}
+        searchParams={searchParams}
+      />
 
       {/* Compact button-style summary chips */}
       <div className="flex flex-wrap gap-2">

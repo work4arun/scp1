@@ -14,8 +14,9 @@ import {
   addMemberAction,
   updateMemberAction,
   removeMemberAction,
+  setTeamHeadAction,
 } from "./actions";
-import { Trash2, Edit2, X, Plus, Users, Save } from "lucide-react";
+import { Trash2, Edit2, X, Plus, Users, Save, Crown } from "lucide-react";
 
 // ────────── Team Form ──────────
 export function TeamForm({
@@ -79,7 +80,7 @@ export function TeamRow({
     active: boolean;
     memberCount: number;
     taskCount: number;
-    members: { id: string; name: string; email: string; designation: string | null; sortOrder: number }[];
+    members: { id: string; name: string; email: string; designation: string | null; sortOrder: number; isHead: boolean }[];
   };
 }) {
   const [editing, setEditing] = useState(false);
@@ -214,7 +215,7 @@ function AddMemberForm({ teamId }: { teamId: string }) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex items-center gap-2">
+    <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <Input name="name" placeholder="Name" required className="h-8 w-28 text-xs" />
       <Input name="email" type="email" placeholder="Email" required className="h-8 w-36 text-xs" />
       <Input name="designation" placeholder="Role" className="h-8 w-24 text-xs" />
@@ -233,7 +234,7 @@ function AddMemberForm({ teamId }: { teamId: string }) {
 function MemberRow({
   member,
 }: {
-  member: { id: string; name: string; email: string; designation: string | null };
+  member: { id: string; name: string; email: string; designation: string | null; isHead: boolean };
 }) {
   const [editing, setEditing] = useState(false);
   const router = useRouter();
@@ -253,15 +254,29 @@ function MemberRow({
   }
 
   return (
-    <div className="flex items-center justify-between rounded border border-border px-2.5 py-1.5">
-      <div className="min-w-0 flex items-center gap-2 text-sm">
+    <div className="flex flex-wrap items-center justify-between gap-1 rounded border border-border px-2.5 py-1.5">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
         <span className="font-medium truncate">{member.name}</span>
         <span className="text-xs text-muted-foreground truncate">{member.email}</span>
         {member.designation && (
           <Badge variant="muted" className="text-[10px]">{member.designation}</Badge>
         )}
+        {member.isHead && (
+          <Badge variant="default" className="text-[10px]"><Crown className="mr-1 h-2.5 w-2.5" />Head</Badge>
+        )}
       </div>
       <div className="flex items-center gap-1 shrink-0">
+        <Button
+          variant="ghost" size="sm" disabled={pending}
+          title={member.isHead ? "Remove as team head" : "Make team head"}
+          onClick={() => startTransition(async () => {
+            const r = await setTeamHeadAction(member.id);
+            if (!r.success) { alert(r.error); return; }
+            router.refresh();
+          })}
+        >
+          <Crown className={`h-3 w-3 ${member.isHead ? "text-primary" : "text-muted-foreground"}`} />
+        </Button>
         <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
           <Edit2 className="h-3 w-3" />
         </Button>
@@ -310,7 +325,7 @@ function EditMemberForm({
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex items-center gap-2">
+    <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <Input name="name" defaultValue={member.name} required className="h-8 w-28 text-xs" />
       <Input name="email" type="email" defaultValue={member.email} required className="h-8 w-36 text-xs" />
       <Input name="designation" defaultValue={member.designation || ""} className="h-8 w-24 text-xs" />

@@ -54,6 +54,8 @@ model TeamMember {
   name        String
   email       String
   designation String?
+  /// Team head. At most one per team — enforced in setTeamHeadAction, not by the DB.
+  isHead      Boolean @default(false)
   sortOrder   Int     @default(0)
   active      Boolean @default(true)
   createdAt   DateTime @default(now())

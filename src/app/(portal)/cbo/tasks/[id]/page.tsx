@@ -6,12 +6,13 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge, PriorityBadge } from "@/components/status-badges";
 import { Badge } from "@/components/ui/badge";
-import { formatRelative, formatDate } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import { ConversationButton } from "@/components/conversation-button";
 import { SmTaskChat } from "@/app/(portal)/sm/tasks/[id]/sm-chat";
 import { TaskNotePanel } from "../../task-note-panel";
+import { TaskTimeline } from "@/components/task-timeline";
 
-export default async function CboTaskDetail({ params, searchParams }: { params: { id: string }; searchParams: { chat?: string } }) {
+export default async function CboTaskDetail({ params, searchParams }: { params: { id: string }; searchParams: { chat?: string; order?: string } }) {
   const session = await auth();
   if (!isCBO(session?.user.systemRole)) redirect("/");
 
@@ -27,6 +28,9 @@ export default async function CboTaskDetail({ params, searchParams }: { params: 
     },
   });
   if (!task) notFound();
+
+  // Timeline reads start → end by default; ?order=desc flips it.
+  const timelineOrder = searchParams.order === "desc" ? "desc" : "asc";
 
   const assignedTeamNames = task.teamAssignments.map((ta) => ta.team.name);
   const assignedMembers = task.assignees.map((a) => ({
@@ -85,16 +89,21 @@ export default async function CboTaskDetail({ params, searchParams }: { params: 
         </Card>
       </div>
 
-      {/* Update History */}
-      <Card><CardHeader><CardTitle>Update History</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
-          {task.updates.length === 0 ? <div className="text-sm text-muted-foreground">No updates yet.</div> : task.updates.map((u) => (
-            <div key={u.id} className="rounded-lg border border-border p-3">
-              <div className="flex items-center justify-between gap-2"><div className="text-xs font-semibold">{u.author.name}</div><div className="text-xs text-muted-foreground">{formatRelative(u.createdAt)}</div></div>
-              <div className="mt-1.5 whitespace-pre-line text-sm">{u.note}</div>
-              {u.newStatus ? <div className="mt-2"><Badge variant="info">Status → {u.newStatus.replace(/_/g, " ")}</Badge></div> : null}
-            </div>
-          ))}
+      {/* Follow-up timeline — every update for this task, day by day, start to end. */}
+      <Card id="timeline">
+        <CardHeader><CardTitle>Follow-Up Timeline</CardTitle></CardHeader>
+        <CardContent>
+          <TaskTimeline
+            entries={task.updates.map((u) => ({
+              id: u.id,
+              createdAt: u.createdAt,
+              note: u.note,
+              newStatus: u.newStatus,
+              authorName: u.author.name,
+            }))}
+            order={timelineOrder}
+            toggleHref={`/cbo/tasks/${task.id}${timelineOrder === "asc" ? "?order=desc" : ""}#timeline`}
+          />
         </CardContent>
       </Card>
 

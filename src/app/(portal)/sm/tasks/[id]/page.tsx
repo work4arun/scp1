@@ -62,18 +62,40 @@ export default async function TaskDetail({ params, searchParams }: { params: { i
         />
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader><CardTitle>Add Status Update</CardTitle></CardHeader>
-          <CardContent>
-            <TaskUpdateForm
-              taskId={task.id}
-              currentStatus={task.status}
-              teams={teams.map((t) => ({ id: t.id, name: t.name, members: t.members.map((m) => ({ id: m.id, name: m.name, email: m.email, designation: m.designation })) }))}
-              assignedTeamIds={assignedTeamIds}
-              assignedMemberIds={assignedMemberIds}
-            />
-          </CardContent>
-        </Card>
+        {/* Update form + history stay together: after filing an update the SM sees it
+            land in the history immediately, instead of scrolling past the details card. */}
+        <div className="space-y-4 lg:col-span-2">
+          <Card>
+            <CardHeader><CardTitle>Add Status Update</CardTitle></CardHeader>
+            <CardContent>
+              <TaskUpdateForm
+                taskId={task.id}
+                currentStatus={task.status}
+                teams={teams.map((t) => ({ id: t.id, name: t.name, members: t.members.map((m) => ({ id: m.id, name: m.name, email: m.email, designation: m.designation })) }))}
+                assignedTeamIds={assignedTeamIds}
+                assignedMemberIds={assignedMemberIds}
+              />
+            </CardContent>
+          </Card>
+          <Card id="conversation-section">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <CardTitle>Update History</CardTitle>
+              {task.updates.length > 0 ? <span className="text-xs text-muted-foreground">{task.updates.length} entr{task.updates.length === 1 ? "y" : "ies"}</span> : null}
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {task.updates.length === 0 ? <div className="text-sm text-muted-foreground">No updates yet.</div> : task.updates.map((u) => (
+                <div key={u.id} className="rounded-lg border border-border p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs font-semibold">{u.author.name}</div>
+                    <div className="text-xs text-muted-foreground" title={formatDate(u.createdAt)}>{formatRelative(u.createdAt)}</div>
+                  </div>
+                  <div className="mt-1.5 whitespace-pre-line text-sm">{u.note}</div>
+                  {u.newStatus ? <div className="mt-2"><Badge variant="info">Status → {u.newStatus.replace(/_/g, " ")}</Badge></div> : null}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
         <Card><CardHeader><CardTitle>Details</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm">
             <Detail label="Teams" value={assignedTeamNames.length > 0 ? assignedTeamNames.join(", ") : "—"} />
@@ -88,18 +110,6 @@ export default async function TaskDetail({ params, searchParams }: { params: { i
           </CardContent>
         </Card>
       </div>
-      <Card id="conversation-section"><CardHeader><CardTitle>Update History</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
-          {task.updates.length === 0 ? <div className="text-sm text-muted-foreground">No updates yet.</div> : task.updates.map((u) => (
-            <div key={u.id} className="rounded-lg border border-border p-3">
-              <div className="flex items-center justify-between gap-2"><div className="text-xs font-semibold">{u.author.name}</div><div className="text-xs text-muted-foreground">{formatRelative(u.createdAt)}</div></div>
-              <div className="mt-1.5 whitespace-pre-line text-sm">{u.note}</div>
-              {u.newStatus ? <div className="mt-2"><Badge variant="info">Status → {u.newStatus.replace(/_/g, " ")}</Badge></div> : null}
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
       {/* SM Chat box */}
       <SmTaskChat taskId={task.id} messages={task.messages} defaultOpen={searchParams.chat === "1"} />
     </div>

@@ -1,3 +1,7 @@
 {
+  "/login/page": "app/login/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/(portal)/cbo/tasks/[id]/page": "app/(portal)/cbo/tasks/[id]/page.js",
+  "/(portal)/cbo/page": "app/(portal)/cbo/page.js",
   "/(portal)/cbo/pages/page": "app/(portal)/cbo/pages/page.js"
 }
