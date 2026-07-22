@@ -397,66 +397,83 @@ function VerticalView({ verticals }: { verticals: VerticalGroup[] }) {
 }
 
 /**
- * Flat register layout — the horizontal Task / Priority / Status / Follow-up table
- * from the CBO Office follow-up sheet, with the vertical as a column instead of a
- * grouping header. Scrolls inside its own container on narrow screens.
+ * Horizontal register from the CBO Office follow-up sheet, split into vertical
+ * sections inside the table: each vertical gets a full-width banner row, and its
+ * tasks follow underneath. That drops the repeating Vertical column and hands the
+ * space back to the follow-up text. Scrolls inside its own container when narrow.
  */
 function TableView({ verticals }: { verticals: VerticalGroup[] }) {
-  const rows = verticals.flatMap((group) =>
-    Array.from(group.tasks.values()).map((taskGroup) => ({ group, ...taskGroup })),
-  );
-
   return (
     <>
-      {/* Mobile — the same register as stacked cards; a 6-column table can't be read on a phone. */}
-      <div className="space-y-2 md:hidden">
-        {rows.map(({ group, task, entries: taskEntries }) => (
-          <div key={task.id} className="rounded-lg border border-border p-3">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ backgroundColor: group.colorHex }}>
+      {/* Mobile — the same sections as stacked cards; a table can't be read on a phone. */}
+      <div className="space-y-3 md:hidden">
+        {verticals.map((group) => (
+          <div key={group.name}>
+            <div className="mb-1.5 flex items-center justify-between gap-2 rounded-md px-2 py-1" style={{ backgroundColor: `${group.colorHex}1a` }}>
+              <span className="flex items-center gap-1.5 text-xs font-bold">
+                <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: group.colorHex }} />
                 {group.name}
               </span>
-              <PriorityBadge code={task.priority.code} />
-              <StatusBadge status={task.status} />
-              <span className="font-mono text-[10px] font-bold text-muted-foreground">{task.code}</span>
+              <span className="text-[10px] text-muted-foreground">
+                {group.tasks.size} task{group.tasks.size === 1 ? "" : "s"}
+              </span>
             </div>
-            <Link href={`/cbo/tasks/${task.id}`} className="mt-1 block break-words text-sm font-medium hover:text-primary">
-              {task.title}
-            </Link>
-            <div className="mt-1.5"><Owner task={task} compact /></div>
-            <ul className="mt-2 space-y-1.5">
-              {taskEntries.map((entry) => (
-                <EntryLine key={entry.id} entry={entry} />
+            <div className="space-y-2">
+              {Array.from(group.tasks.values()).map(({ task, entries: taskEntries }) => (
+                <div key={task.id} className="rounded-lg border border-border p-3">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <PriorityBadge code={task.priority.code} />
+                    <StatusBadge status={task.status} />
+                    <span className="font-mono text-[10px] font-bold text-muted-foreground">{task.code}</span>
+                  </div>
+                  <Link href={`/cbo/tasks/${task.id}`} className="mt-1 block break-words text-sm font-medium hover:text-primary">
+                    {task.title}
+                  </Link>
+                  <div className="mt-1.5"><Owner task={task} compact /></div>
+                  <ul className="mt-2 space-y-1.5">
+                    {taskEntries.map((entry) => (
+                      <EntryLine key={entry.id} entry={entry} />
+                    ))}
+                  </ul>
+                  <div className="mt-2"><TimelineLink taskId={task.id} /></div>
+                </div>
               ))}
-            </ul>
-            <div className="mt-2"><TimelineLink taskId={task.id} /></div>
+            </div>
           </div>
         ))}
       </div>
 
-      {/* Desktop — full horizontal register. */}
+      {/* Desktop — full horizontal register, sectioned by vertical. */}
       <div className="hidden overflow-x-auto rounded-lg border border-border md:block">
-      <table className="w-full min-w-[860px] border-collapse text-sm">
+      <table className="w-full min-w-[760px] border-collapse text-sm">
         <thead>
           <tr className="border-b-2 border-border bg-muted/40 text-left [&>th]:border-r [&>th]:border-border [&>th:last-child]:border-r-0">
-            <Th className="w-[16%]">Vertical</Th>
-            <Th className="w-[26%]">Task / Activity</Th>
-            <Th className="w-[16%]">Team / Head</Th>
-            <Th className="w-[7%]">Priority</Th>
-            <Th className="w-[11%]">Status</Th>
+            <Th className="w-[30%]">Task / Activity</Th>
+            <Th className="w-[18%]">Team / Head</Th>
+            <Th className="w-[8%]">Priority</Th>
+            <Th className="w-[12%]">Status</Th>
             <Th>Follow-up Done Today</Th>
           </tr>
         </thead>
-        <tbody>
-          {rows.map(({ group, task, entries: taskEntries }) => (
+        {verticals.map((group) => (
+          <tbody key={group.name}>
+            {/* Vertical banner — spans the table, tinted with the vertical's own colour. */}
+            <tr>
+              <td colSpan={5} className="border-y border-border px-3 py-1.5" style={{ backgroundColor: `${group.colorHex}1a` }}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 text-xs font-bold">
+                    <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: group.colorHex }} />
+                    {group.name}
+                  </span>
+                  <span className="text-[10px] font-semibold text-muted-foreground">
+                    {group.tasks.size} task{group.tasks.size === 1 ? "" : "s"}
+                  </span>
+                </div>
+              </td>
+            </tr>
+            {Array.from(group.tasks.values()).map(({ task, entries: taskEntries }) => (
             /* Light horizontal rule between rows, solid vertical rules between columns. */
             <tr key={task.id} className="border-b border-border/50 align-top last:border-b-0 [&>td]:border-r [&>td]:border-border [&>td:last-child]:border-r-0">
-              <td className="px-3 py-2.5">
-                <span className="inline-flex items-center gap-1.5 text-xs font-semibold">
-                  <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: group.colorHex }} />
-                  {group.name}
-                </span>
-              </td>
               <td className="px-3 py-2.5">
                 <Link href={`/cbo/tasks/${task.id}`} className="text-sm font-medium hover:text-primary hover:underline">
                   {task.title}
@@ -477,8 +494,9 @@ function TableView({ verticals }: { verticals: VerticalGroup[] }) {
                 </ul>
               </td>
             </tr>
-          ))}
-        </tbody>
+            ))}
+          </tbody>
+        ))}
       </table>
       </div>
     </>

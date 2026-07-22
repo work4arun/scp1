@@ -5,10 +5,8 @@ import { isCBO } from "@/lib/rbac";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge, PriorityBadge } from "@/components/status-badges";
 import { formatRelative, formatDate } from "@/lib/utils";
-import { Layers, MessageSquare, Mic } from "lucide-react";
+import { MessageSquare, Mic } from "lucide-react";
 import Link from "next/link";
-import { TaskStatusFilter } from "./overview-status-filter";
-import { TaskVerticalFilter } from "./overview-vertical-filter";
 import { TaskNotePanel } from "./task-note-panel";
 import { FollowUpCalendar, DailyFollowUpPanel, buildFollowUpModel } from "./daily-followup";
 import { monthRangeUtc, parseMonthKey } from "@/lib/followups";
@@ -32,14 +30,7 @@ export default async function CboHome({ searchParams }: { searchParams: Record<s
   if (selectedPriority) where.priority = { code: selectedPriority };
   if (selectedVertical) where.verticalId = selectedVertical;
 
-  const [taskCount, priorityStats, tasks, verticals, monthUpdates] = await Promise.all([
-    prisma.task.count({ where: { status: { not: "DROPPED" } } }),
-    Promise.all([
-      prisma.task.count({ where: { priority: { code: "P1" }, status: { not: "DROPPED" } } }).then((c) => ({ code: "P1", label: "Critical", count: c })),
-      prisma.task.count({ where: { priority: { code: "P2" }, status: { not: "DROPPED" } } }).then((c) => ({ code: "P2", label: "High", count: c })),
-      prisma.task.count({ where: { priority: { code: "P3" }, status: { not: "DROPPED" } } }).then((c) => ({ code: "P3", label: "Medium", count: c })),
-      prisma.task.count({ where: { priority: { code: "P4" }, status: { not: "DROPPED" } } }).then((c) => ({ code: "P4", label: "Low", count: c })),
-    ]),
+  const [tasks, verticals, monthUpdates] = await Promise.all([
     prisma.task.findMany({
       where: where as any,
       orderBy: [{ priority: { rank: "asc" } }, { updatedAt: "desc" }],
@@ -131,29 +122,6 @@ export default async function CboHome({ searchParams }: { searchParams: Record<s
         view={followUpView}
         searchParams={searchParams}
       />
-
-      {/* Compact button-style summary chips */}
-      <div className="flex flex-wrap gap-2">
-        <Link href="/cbo" className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${!selectedPriority && !selectedStatus && !selectedVertical ? "border-primary/60 ring-2 ring-primary/20 bg-primary/5" : "border-border hover:bg-accent"}`}>
-          <Layers className="h-3.5 w-3.5 text-primary" />
-          <span className="text-muted-foreground">Total</span>
-          <span className="font-bold">{taskCount}</span>
-        </Link>
-        {priorityStats.map((p) => (
-          <Link key={p.code} href={`/cbo?priority=${p.code}`} className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${selectedPriority === p.code ? "border-primary/60 ring-2 ring-primary/20 bg-primary/5" : "border-border hover:bg-accent"}`}>
-            <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: p.code === "P1" ? "#dc2626" : p.code === "P2" ? "#ea580c" : p.code === "P3" ? "#ca8a04" : "#16a34a" }} />
-            <span className="text-muted-foreground">{p.code}</span>
-            <span className="font-bold">{p.count}</span>
-          </Link>
-        ))}
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2"><span className="text-xs font-medium text-muted-foreground">Status:</span><TaskStatusFilter current={selectedStatus} priority={selectedPriority} /></div>
-        <div className="flex items-center gap-2"><span className="text-xs font-medium text-muted-foreground">Vertical:</span><TaskVerticalFilter current={selectedVertical} status={selectedStatus} priority={selectedPriority} verticals={verticals.map((v) => ({ id: v.id, code: v.code, name: v.name }))} /></div>
-        {filterLabel && <div className="flex items-center gap-2"><span className="text-xs font-medium text-primary bg-primary/10 rounded px-2 py-0.5">{filterLabel}</span><Link href="/cbo" className="text-xs text-muted-foreground hover:text-foreground">Clear</Link></div>}
-      </div>
 
       {/* Task list */}
       <Card>
