@@ -189,6 +189,9 @@ export function AppShell({
                 )}
               </div>
             ))}
+            {/* Page-owned sidebar slot. The CBO overview portals its Daily Follow-Up
+                calendar in here; every other page leaves it empty. */}
+            <div id="sidebar-slot" className="mt-3" />
           </nav>
           <div className="border-t border-border p-4">
             <div className="flex items-start justify-between gap-2">

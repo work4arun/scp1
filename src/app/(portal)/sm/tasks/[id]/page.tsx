@@ -10,6 +10,7 @@ import { formatRelative, formatDate } from "@/lib/utils";
 import { TaskUpdateForm } from "./update-form";
 import { TaskActions } from "./task-actions";
 import { ConversationButton } from "@/components/conversation-button";
+import { LinkifiedText } from "@/components/linkified-text";
 import { SmTaskChat } from "./sm-chat";
 
 export default async function TaskDetail({ params, searchParams }: { params: { id: string }; searchParams: { chat?: string } }) {
@@ -89,7 +90,7 @@ export default async function TaskDetail({ params, searchParams }: { params: { i
                     <div className="text-xs font-semibold">{u.author.name}</div>
                     <div className="text-xs text-muted-foreground" title={formatDate(u.createdAt)}>{formatRelative(u.createdAt)}</div>
                   </div>
-                  <div className="mt-1.5 whitespace-pre-line text-sm">{u.note}</div>
+                  <LinkifiedText text={u.note} className="mt-1.5 whitespace-pre-line break-words text-sm" />
                   {u.newStatus ? <div className="mt-2"><Badge variant="info">Status → {u.newStatus.replace(/_/g, " ")}</Badge></div> : null}
                 </div>
               ))}

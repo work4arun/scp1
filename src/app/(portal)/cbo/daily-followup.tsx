@@ -13,7 +13,7 @@ import Link from "next/link";
 import type { TaskStatus } from "@prisma/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge, PriorityBadge } from "@/components/status-badges";
-import { ChevronLeft, ChevronRight, CalendarDays, LayoutList, Rows3, Users, Crown, History } from "lucide-react";
+import { ChevronLeft, ChevronRight, CalendarDays, LayoutList, Rows3 } from "lucide-react";
 import {
   classifyUpdate,
   dayKey,
@@ -23,9 +23,10 @@ import {
   monthGrid,
   monthLabel,
   shiftMonth,
-  timeOfDay,
   todayKey,
 } from "@/lib/followups";
+// Shared with the client table so the two views render follow-ups identically.
+import { RegisterTable, Owner, EntryLine, TimelineLink, type RegisterRow } from "./register-table";
 
 export type FollowUpEntry = {
   id: string;
@@ -131,7 +132,9 @@ export function FollowUpCalendar({
   const hrefWith = makeHrefWith(searchParams);
 
   return (
-    <div className="w-full rounded-lg border border-border bg-card p-2.5 sm:w-[228px]">
+    /* Width comes from the container — the sidebar slot on lg+, a capped inline
+       block on smaller screens. */
+    <div className="w-full rounded-lg border border-border bg-card p-2.5">
       <div className="mb-1.5 flex items-center gap-1.5">
         <CalendarDays className="h-3.5 w-3.5 shrink-0 text-primary" />
         <span className="text-[11px] font-bold">Daily Follow-Up</span>
@@ -320,7 +323,7 @@ function DayDetail({
         <Kpi value={orderedVerticals.length} label="Verticals" />
       </div>
 
-      {view === "table" ? <TableView verticals={orderedVerticals} /> : <VerticalView verticals={orderedVerticals} />}
+      {view === "table" ? <RegisterTable rows={toRegisterRows(orderedVerticals)} /> : <VerticalView verticals={orderedVerticals} />}
     </div>
   );
 }
@@ -381,7 +384,7 @@ function VerticalView({ verticals }: { verticals: VerticalGroup[] }) {
                   </Link>
                   <TimelineLink taskId={task.id} />
                 </div>
-                <div className="mt-1"><Owner task={task} compact /></div>
+                <div className="mt-1"><Owner teams={task.teams} members={task.members} compact /></div>
                 <ul className="mt-1.5 space-y-1.5">
                   {taskEntries.map((entry) => (
                     <EntryLine key={entry.id} entry={entry} />
@@ -397,174 +400,32 @@ function VerticalView({ verticals }: { verticals: VerticalGroup[] }) {
 }
 
 /**
- * Horizontal register from the CBO Office follow-up sheet, split into vertical
- * sections inside the table: each vertical gets a full-width banner row, and its
- * tasks follow underneath. That drops the repeating Vertical column and hands the
- * space back to the follow-up text. Scrolls inside its own container when narrow.
+ * Flatten the grouped structure into the flat rows the client table wants.
+ * Everything crossing into the client component must be serialisable — plain
+ * objects and Dates only, which is why the Maps are unwound here.
  */
-function TableView({ verticals }: { verticals: VerticalGroup[] }) {
-  return (
-    <>
-      {/* Mobile — the same sections as stacked cards; a table can't be read on a phone. */}
-      <div className="space-y-3 md:hidden">
-        {verticals.map((group) => (
-          <div key={group.name}>
-            <div className="mb-1.5 flex items-center justify-between gap-2 rounded-md px-2 py-1" style={{ backgroundColor: `${group.colorHex}1a` }}>
-              <span className="flex items-center gap-1.5 text-xs font-bold">
-                <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: group.colorHex }} />
-                {group.name}
-              </span>
-              <span className="text-[10px] text-muted-foreground">
-                {group.tasks.size} task{group.tasks.size === 1 ? "" : "s"}
-              </span>
-            </div>
-            <div className="space-y-2">
-              {Array.from(group.tasks.values()).map(({ task, entries: taskEntries }) => (
-                <div key={task.id} className="rounded-lg border border-border p-3">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <PriorityBadge code={task.priority.code} />
-                    <StatusBadge status={task.status} />
-                    <span className="font-mono text-[10px] font-bold text-muted-foreground">{task.code}</span>
-                  </div>
-                  <Link href={`/cbo/tasks/${task.id}`} className="mt-1 block break-words text-sm font-medium hover:text-primary">
-                    {task.title}
-                  </Link>
-                  <div className="mt-1.5"><Owner task={task} compact /></div>
-                  <ul className="mt-2 space-y-1.5">
-                    {taskEntries.map((entry) => (
-                      <EntryLine key={entry.id} entry={entry} />
-                    ))}
-                  </ul>
-                  <div className="mt-2"><TimelineLink taskId={task.id} /></div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Desktop — full horizontal register, sectioned by vertical. */}
-      <div className="hidden overflow-x-auto rounded-lg border border-border md:block">
-      <table className="w-full min-w-[760px] border-collapse text-sm">
-        <thead>
-          <tr className="border-b-2 border-border bg-muted/40 text-left [&>th]:border-r [&>th]:border-border [&>th:last-child]:border-r-0">
-            <Th className="w-[30%]">Task / Activity</Th>
-            <Th className="w-[18%]">Team / Head</Th>
-            <Th className="w-[8%]">Priority</Th>
-            <Th className="w-[12%]">Status</Th>
-            <Th>Follow-up Done Today</Th>
-          </tr>
-        </thead>
-        {verticals.map((group) => (
-          <tbody key={group.name}>
-            {/* Vertical banner — spans the table, tinted with the vertical's own colour. */}
-            <tr>
-              <td colSpan={5} className="border-y border-border px-3 py-1.5" style={{ backgroundColor: `${group.colorHex}1a` }}>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="flex items-center gap-1.5 text-xs font-bold">
-                    <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: group.colorHex }} />
-                    {group.name}
-                  </span>
-                  <span className="text-[10px] font-semibold text-muted-foreground">
-                    {group.tasks.size} task{group.tasks.size === 1 ? "" : "s"}
-                  </span>
-                </div>
-              </td>
-            </tr>
-            {Array.from(group.tasks.values()).map(({ task, entries: taskEntries }) => (
-            /* Light horizontal rule between rows, solid vertical rules between columns. */
-            <tr key={task.id} className="border-b border-border/50 align-top last:border-b-0 [&>td]:border-r [&>td]:border-border [&>td:last-child]:border-r-0">
-              <td className="px-3 py-2.5">
-                <Link href={`/cbo/tasks/${task.id}`} className="text-sm font-medium hover:text-primary hover:underline">
-                  {task.title}
-                </Link>
-                <div className="mt-0.5 flex items-center gap-2">
-                  <span className="font-mono text-[10px] font-bold text-muted-foreground">{task.code}</span>
-                  <TimelineLink taskId={task.id} />
-                </div>
-              </td>
-              <td className="px-3 py-2.5"><Owner task={task} /></td>
-              <td className="px-3 py-2.5"><PriorityBadge code={task.priority.code} /></td>
-              <td className="px-3 py-2.5"><StatusBadge status={task.status} /></td>
-              <td className="px-3 py-2.5">
-                <ul className="space-y-1.5">
-                  {taskEntries.map((entry) => (
-                    <EntryLine key={entry.id} entry={entry} />
-                  ))}
-                </ul>
-              </td>
-            </tr>
-            ))}
-          </tbody>
-        ))}
-      </table>
-      </div>
-    </>
-  );
-}
-
-function Th({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <th className={`px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground ${className}`}>{children}</th>;
-}
-
-/** Jump from a day's entry to this task's full follow-up history across all days. */
-function TimelineLink({ taskId }: { taskId: string }) {
-  return (
-    <Link
-      href={`/cbo/tasks/${taskId}#timeline`}
-      title="See every follow-up for this task, start to end"
-      className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-muted-foreground hover:text-primary"
-    >
-      <History className="h-3 w-3" />
-      Timeline
-    </Link>
-  );
-}
-
-/**
- * The register's owner column: assigned team, with its head named underneath.
- * Falls back to individually assigned members when a task has no team.
- */
-function Owner({ task, compact = false }: { task: FollowUpEntry["task"]; compact?: boolean }) {
-  if (task.teams.length === 0 && task.members.length === 0) {
-    return <span className="text-xs text-muted-foreground">—</span>;
-  }
-
-  return (
-    <div className={compact ? "flex flex-wrap items-center gap-x-2 gap-y-0.5" : "space-y-1"}>
-      {task.teams.map((t) => (
-        <div key={t.name} className={compact ? "inline-flex items-center gap-1" : ""}>
-          <span className="inline-flex items-center gap-1 text-xs font-semibold">
-            <Users className="h-3 w-3 shrink-0 text-muted-foreground" />
-            {t.name}
-          </span>
-          {t.head ? (
-            <span className={`text-[10px] text-muted-foreground ${compact ? "ml-1" : "ml-4 block"}`}>
-              <Crown className="mr-0.5 inline h-2.5 w-2.5" />
-              {t.head}
-            </span>
-          ) : null}
-        </div>
-      ))}
-      {task.teams.length === 0 && task.members.length > 0 ? (
-        <span className="text-xs text-muted-foreground">{task.members.join(", ")}</span>
-      ) : null}
-    </div>
-  );
-}
-
-/** One follow-up line — dimmed and smaller when it's a system-generated row. */
-function EntryLine({ entry }: { entry: FollowUpEntry }) {
-  const kind = classifyUpdate(entry.note);
-  const isSystem = kind !== "note";
-  return (
-    <li className={`min-w-0 border-l-2 pl-2.5 text-sm ${isSystem ? "border-border text-muted-foreground" : "border-primary/50"}`}>
-      <div className={`whitespace-pre-line break-words ${isSystem ? "text-xs" : ""}`}>{entry.note}</div>
-      <div className="mt-0.5 text-[10px] text-muted-foreground">
-        {timeOfDay(entry.createdAt)} · {entry.authorName}
-        {isSystem ? <span className="ml-1 opacity-70">· {kind === "edit" ? "field edit" : "status change"}</span> : null}
-      </div>
-    </li>
+function toRegisterRows(verticals: VerticalGroup[]): RegisterRow[] {
+  return verticals.flatMap((group) =>
+    Array.from(group.tasks.values()).map(({ task, entries }) => ({
+      taskId: task.id,
+      code: task.code,
+      title: task.title,
+      status: task.status,
+      priorityCode: task.priority.code,
+      verticalId: task.vertical.id,
+      verticalName: group.name,
+      verticalColor: group.colorHex,
+      verticalSort: group.sortOrder,
+      teams: task.teams,
+      members: task.members,
+      entries: entries.map((e) => ({
+        id: e.id,
+        createdAt: e.createdAt,
+        note: e.note,
+        newStatus: e.newStatus,
+        authorName: e.authorName,
+      })),
+    })),
   );
 }
 

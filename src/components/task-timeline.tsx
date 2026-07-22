@@ -12,6 +12,7 @@ import Link from "next/link";
 import type { TaskStatus } from "@prisma/client";
 import { Badge } from "@/components/ui/badge";
 import { ArrowDownUp, CalendarDays } from "lucide-react";
+import { LinkifiedText } from "@/components/linkified-text";
 import { classifyUpdate, dayKey, dayLabel, timeOfDay } from "@/lib/followups";
 
 export type TimelineEntry = {
@@ -121,9 +122,10 @@ export function TaskTimeline({
                       key={entry.id}
                       className={`rounded-lg border p-2.5 ${isSystem ? "border-dashed border-border bg-muted/20" : "border-border"}`}
                     >
-                      <div className={`whitespace-pre-line break-words ${isSystem ? "text-xs text-muted-foreground" : "text-sm"}`}>
-                        {entry.note}
-                      </div>
+                      <LinkifiedText
+                        text={entry.note}
+                        className={`whitespace-pre-line break-words ${isSystem ? "text-xs text-muted-foreground" : "text-sm"}`}
+                      />
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
                         <span>{timeOfDay(entry.createdAt)}</span>
                         <span>· {entry.authorName}</span>
