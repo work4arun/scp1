@@ -11,13 +11,14 @@
 
 import Link from "next/link";
 import type { TaskStatus } from "@prisma/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge, PriorityBadge } from "@/components/status-badges";
 import { ChevronLeft, ChevronRight, CalendarDays, LayoutList, Rows3, Users, Crown, History } from "lucide-react";
 import {
   classifyUpdate,
   dayKey,
   dayLabel,
+  dayName,
   formatMonthKey,
   monthGrid,
   monthLabel,
@@ -51,26 +52,26 @@ const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 /** How the selected day's entries are laid out. */
 export type FollowUpView = "vertical" | "table";
 
-export function DailyFollowUp({
-  entries,
-  year,
-  month,
-  selectedDay,
-  view,
-  searchParams,
-}: {
-  /** Every update filed in the displayed month (already timezone-bucketed by the caller's query range). */
-  entries: FollowUpEntry[];
-  year: number;
-  month: number;
-  /** "2026-07-21", or null when no date is selected. */
-  selectedDay: string | null;
-  /** "vertical" = grouped cards per vertical, "table" = one flat horizontal register. */
-  view: FollowUpView;
-  /** Current page searchParams, so month/day links preserve the task-list filters. */
-  searchParams: Record<string, string | undefined>;
-}) {
-  // Bucket the month's entries by local calendar day.
+/**
+ * Shared state for the calendar and the day panel. They render in two different
+ * places on the page (header corner vs full-width card) but must agree on which
+ * day is open, so the bucketing happens once here and both read from it.
+ */
+export type FollowUpModel = {
+  byDay: Map<string, FollowUpEntry[]>;
+  /** The day being shown — the explicit selection, else today, else the latest day with entries. */
+  openDay: string | null;
+  dayEntries: FollowUpEntry[];
+  monthTotal: number;
+  activeDays: number;
+};
+
+export function buildFollowUpModel(
+  entries: FollowUpEntry[],
+  year: number,
+  month: number,
+  selectedDay: string | null,
+): FollowUpModel {
   const byDay = new Map<string, FollowUpEntry[]>();
   for (const entry of entries) {
     const key = dayKey(entry.createdAt);
@@ -79,50 +80,65 @@ export function DailyFollowUp({
     else byDay.set(key, [entry]);
   }
 
-  const { days, firstWeekday } = monthGrid(year, month);
-  const today = todayKey();
   const monthPrefix = formatMonthKey(year, month);
+  const today = todayKey();
+  const daysWithEntries = Array.from(byDay.keys()).filter((key) => key.startsWith(monthPrefix)).sort();
 
-  function hrefWith(overrides: Record<string, string | undefined>): string {
+  // Open on today when it has follow-ups, else the most recent day that does — so
+  // the CBO reads the latest follow-up without spending a click.
+  const fallbackDay = byDay.has(today) && today.startsWith(monthPrefix) ? today : daysWithEntries[daysWithEntries.length - 1] ?? null;
+  const openDay = selectedDay ?? fallbackDay;
+
+  return {
+    byDay,
+    openDay,
+    dayEntries: openDay ? byDay.get(openDay) ?? [] : [],
+    monthTotal: daysWithEntries.reduce((sum, key) => sum + (byDay.get(key)?.length ?? 0), 0),
+    activeDays: daysWithEntries.length,
+  };
+}
+
+function makeHrefWith(searchParams: Record<string, string | undefined>) {
+  return (overrides: Record<string, string | undefined>): string => {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries({ ...searchParams, ...overrides })) {
       if (value) params.set(key, value);
     }
     const qs = params.toString();
     return qs ? `/cbo?${qs}` : "/cbo";
-  }
+  };
+}
 
-  const daysWithEntries = Array.from(byDay.keys()).filter((key) => key.startsWith(monthPrefix)).sort();
-  // Open on today when it has follow-ups, else the most recent day that does — so
-  // the CBO reads the latest follow-up without spending a click.
-  const fallbackDay = byDay.has(today) && today.startsWith(monthPrefix) ? today : daysWithEntries[daysWithEntries.length - 1] ?? null;
-  const openDay = selectedDay ?? fallbackDay;
-
-  const dayEntries = openDay ? byDay.get(openDay) ?? [] : [];
-  const monthTotal = daysWithEntries.reduce((sum, key) => sum + (byDay.get(key)?.length ?? 0), 0);
-  const activeDays = daysWithEntries.length;
+/**
+ * The compact month picker. Sized to sit in the page-header corner so the
+ * follow-up register below it gets the full page width.
+ */
+export function FollowUpCalendar({
+  model,
+  year,
+  month,
+  searchParams,
+}: {
+  model: FollowUpModel;
+  year: number;
+  month: number;
+  searchParams: Record<string, string | undefined>;
+}) {
+  const { byDay, openDay, monthTotal, activeDays } = model;
+  const { days, firstWeekday } = monthGrid(year, month);
+  const today = todayKey();
+  const monthPrefix = formatMonthKey(year, month);
+  const hrefWith = makeHrefWith(searchParams);
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-        <div className="flex items-center gap-2">
-          <CalendarDays className="h-4 w-4 text-primary" />
-          <CardTitle className="text-sm">Daily Follow-Up</CardTitle>
-          <span className="text-[11px] text-muted-foreground">
-            {monthTotal > 0 ? `${monthTotal} update${monthTotal === 1 ? "" : "s"} across ${activeDays} day${activeDays === 1 ? "" : "s"}` : "no updates filed"}
-          </span>
-        </div>
-      </CardHeader>
-
-      <CardContent>
-        {/* Compact calendar sits beside the day's follow-ups on wide screens. */}
-        <div className="grid gap-4 lg:grid-cols-[218px_minmax(0,1fr)]">
-          {/* ── Calendar ── */}
-          {/* Capped and centred on phones so the 7-day grid keeps square-ish cells
-              instead of stretching into wide slivers; pinned beside the detail on lg. */}
-          <div className="mx-auto w-full max-w-[260px] lg:mx-0 lg:max-w-none lg:sticky lg:top-4 lg:self-start">
-            {/* Month shifter sits directly above the weekday row so the whole calendar
-                control reads top-down: month → weekdays → dates. */}
+    <div className="w-full rounded-lg border border-border bg-card p-2.5 sm:w-[228px]">
+      <div className="mb-1.5 flex items-center gap-1.5">
+        <CalendarDays className="h-3.5 w-3.5 shrink-0 text-primary" />
+        <span className="text-[11px] font-bold">Daily Follow-Up</span>
+      </div>
+          {/* Month shifter sits directly above the weekday row so the whole calendar
+              control reads top-down: month → weekdays → dates. */}
+          <div>
             <div className="mb-1.5 flex items-center justify-between gap-1">
               <Link
                 href={hrefWith({ m: shiftMonth(year, month, -1), d: undefined })}
@@ -186,25 +202,50 @@ export function DailyFollowUp({
                 );
               })}
             </div>
-            <div className="mt-2 space-y-0.5 text-[9px] leading-relaxed text-muted-foreground">
-              <div className="flex items-center gap-1.5">
-                <span className="inline-block h-1 w-1 rounded-full bg-primary" /> has follow-ups — click to open
-              </div>
-              <div className="flex items-center gap-1.5">
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[9px] leading-relaxed text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <span className="inline-block h-1 w-1 rounded-full bg-primary" /> has follow-ups
+              </span>
+              <span className="flex items-center gap-1">
                 <span className="inline-block h-2 w-2 rounded-sm ring-1 ring-primary/40" /> today
-              </div>
+              </span>
+            </div>
+            <div className="mt-1 text-[9px] text-muted-foreground">
+              {monthTotal > 0 ? `${monthTotal} update${monthTotal === 1 ? "" : "s"} · ${activeDays} day${activeDays === 1 ? "" : "s"}` : "no updates filed"}
             </div>
           </div>
+    </div>
+  );
+}
 
-          {/* ── Selected day ── */}
-          {openDay ? (
-            <DayDetail dayKeyValue={openDay} entries={dayEntries} view={view} hrefWith={hrefWith} />
-          ) : (
-            <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">
-              No follow-ups filed in {monthLabel(year, month)} yet.
-            </div>
-          )}
-        </div>
+/** The day's follow-up register — rendered full width, below the header. */
+export function DailyFollowUpPanel({
+  model,
+  year,
+  month,
+  view,
+  searchParams,
+}: {
+  model: FollowUpModel;
+  year: number;
+  month: number;
+  /** "vertical" = grouped cards per vertical, "table" = one flat horizontal register. */
+  view: FollowUpView;
+  searchParams: Record<string, string | undefined>;
+}) {
+  const { openDay, dayEntries } = model;
+  const hrefWith = makeHrefWith(searchParams);
+
+  return (
+    <Card>
+      <CardContent className="pt-4">
+        {openDay ? (
+          <DayDetail dayKeyValue={openDay} entries={dayEntries} view={view} hrefWith={hrefWith} />
+        ) : (
+          <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">
+            No follow-ups filed in {monthLabel(year, month)} yet.
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -256,10 +297,18 @@ function DayDetail({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2.5">
         <div>
-          <h3 className="text-sm font-bold">Follow-Up — {dayLabel(dayKeyValue)}</h3>
-          <span className="text-[11px] text-muted-foreground">{written.length} written · {entries.length} total</span>
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Follow-Up</div>
+          <h3 className="mt-0.5 text-lg font-bold leading-tight tracking-tight text-primary sm:text-xl">
+            {dayName(dayKeyValue)}
+            <span className="text-foreground">, {dayLabel(dayKeyValue)}</span>
+          </h3>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
+            <span className="font-semibold text-foreground">{written.length}</span> written
+            <span className="text-border">•</span>
+            <span className="font-semibold text-foreground">{entries.length}</span> total
+          </div>
         </div>
         <ViewToggle view={view} hrefWith={hrefWith} />
       </div>
@@ -389,7 +438,7 @@ function TableView({ verticals }: { verticals: VerticalGroup[] }) {
       <div className="hidden overflow-x-auto rounded-lg border border-border md:block">
       <table className="w-full min-w-[860px] border-collapse text-sm">
         <thead>
-          <tr className="border-b border-border bg-muted/40 text-left">
+          <tr className="border-b-2 border-border bg-muted/40 text-left [&>th]:border-r [&>th]:border-border [&>th:last-child]:border-r-0">
             <Th className="w-[16%]">Vertical</Th>
             <Th className="w-[26%]">Task / Activity</Th>
             <Th className="w-[16%]">Team / Head</Th>
@@ -400,7 +449,8 @@ function TableView({ verticals }: { verticals: VerticalGroup[] }) {
         </thead>
         <tbody>
           {rows.map(({ group, task, entries: taskEntries }) => (
-            <tr key={task.id} className="border-b border-border align-top last:border-b-0">
+            /* Light horizontal rule between rows, solid vertical rules between columns. */
+            <tr key={task.id} className="border-b border-border/50 align-top last:border-b-0 [&>td]:border-r [&>td]:border-border [&>td:last-child]:border-r-0">
               <td className="px-3 py-2.5">
                 <span className="inline-flex items-center gap-1.5 text-xs font-semibold">
                   <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: group.colorHex }} />

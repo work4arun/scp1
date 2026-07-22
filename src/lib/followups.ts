@@ -74,6 +74,15 @@ export function monthLabel(year: number, month: number): string {
   return `${MONTH_NAMES[month]} ${year}`;
 }
 
+const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/** "Tuesday" from a "2026-07-21" day key. */
+export function dayName(key: string): string {
+  const [y, m, d] = key.split("-").map(Number);
+  if (!y || !m || !d) return "";
+  return WEEKDAY_NAMES[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+}
+
 /** "21 July 2026" from a "2026-07-21" day key. */
 export function dayLabel(key: string): string {
   const [y, m, d] = key.split("-").map(Number);

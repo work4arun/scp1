@@ -2,7 +2,6 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { isCBO } from "@/lib/rbac";
-import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge, PriorityBadge } from "@/components/status-badges";
 import { formatRelative, formatDate } from "@/lib/utils";
@@ -11,7 +10,7 @@ import Link from "next/link";
 import { TaskStatusFilter } from "./overview-status-filter";
 import { TaskVerticalFilter } from "./overview-vertical-filter";
 import { TaskNotePanel } from "./task-note-panel";
-import { DailyFollowUp } from "./daily-followup";
+import { FollowUpCalendar, DailyFollowUpPanel, buildFollowUpModel } from "./daily-followup";
 import { monthRangeUtc, parseMonthKey } from "@/lib/followups";
 
 export default async function CboHome({ searchParams }: { searchParams: Record<string, string | undefined> }) {
@@ -76,6 +75,29 @@ export default async function CboHome({ searchParams }: { searchParams: Record<s
     }),
   ]);
 
+  const followUpModel = buildFollowUpModel(
+    monthUpdates.map((u) => ({
+      id: u.id,
+      createdAt: u.createdAt,
+      note: u.note,
+      newStatus: u.newStatus,
+      authorName: u.author.name,
+      task: {
+        id: u.task.id,
+        code: u.task.code,
+        title: u.task.title,
+        status: u.task.status,
+        vertical: { id: u.task.vertical.id, name: u.task.vertical.name, colorHex: u.task.vertical.colorHex, sortOrder: u.task.vertical.sortOrder },
+        priority: { code: u.task.priority.code },
+        teams: u.task.teamAssignments.map((ta) => ({ name: ta.team.name, head: ta.team.members[0]?.name ?? null })),
+        members: u.task.assignees.map((a) => a.member.name),
+      },
+    })),
+    year,
+    month,
+    selectedDay,
+  );
+
   const selectedVerticalName = verticals.find((v) => v.id === selectedVertical)?.code;
   const filterLabelParts: string[] = [];
   if (selectedStatus) filterLabelParts.push(`Status: ${selectedStatus.replace(/_/g, " ")}`);
@@ -85,30 +107,27 @@ export default async function CboHome({ searchParams }: { searchParams: Record<s
 
   return (
     <div className="space-y-4 animate-fade-in">
-      <PageHeader title={`Good day, ${session.user.name?.split(" ")[0] || "Dr. BN"}`} description="Overview — monitor all tasks across verticals." />
+      {/* Header row: greeting left, calendar centred. The empty third column is what
+          centres it — equal flex-1 on both sides, calendar fixed-width in the middle.
+          Not PageHeader, because that slots its action hard right. */}
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start">
+        <div className="min-w-0 sm:flex-1">
+          <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+            Good day, {session.user.name?.split(" ")[0] || "Dr. BN"}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">Overview — monitor all tasks across verticals.</p>
+        </div>
+        <div className="shrink-0 sm:mx-auto">
+          <FollowUpCalendar model={followUpModel} year={year} month={month} searchParams={searchParams} />
+        </div>
+        <div className="hidden sm:block sm:flex-1" aria-hidden />
+      </div>
 
       {/* Date-wise follow-up register */}
-      <DailyFollowUp
-        entries={monthUpdates.map((u) => ({
-          id: u.id,
-          createdAt: u.createdAt,
-          note: u.note,
-          newStatus: u.newStatus,
-          authorName: u.author.name,
-          task: {
-            id: u.task.id,
-            code: u.task.code,
-            title: u.task.title,
-            status: u.task.status,
-            vertical: { id: u.task.vertical.id, name: u.task.vertical.name, colorHex: u.task.vertical.colorHex, sortOrder: u.task.vertical.sortOrder },
-            priority: { code: u.task.priority.code },
-            teams: u.task.teamAssignments.map((ta) => ({ name: ta.team.name, head: ta.team.members[0]?.name ?? null })),
-            members: u.task.assignees.map((a) => a.member.name),
-          },
-        }))}
+      <DailyFollowUpPanel
+        model={followUpModel}
         year={year}
         month={month}
-        selectedDay={selectedDay}
         view={followUpView}
         searchParams={searchParams}
       />
