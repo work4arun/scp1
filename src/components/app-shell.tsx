@@ -21,6 +21,7 @@ import {
   ChevronDown,
   ShieldCheck,
   FileText,
+  Briefcase,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SystemRole } from "@prisma/client";
@@ -28,7 +29,15 @@ import { SignOutButton } from "@/components/sign-out-button";
 import { DarkModeToggle } from "@/components/dark-mode-toggle";
 
 type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }> };
-type NavSection = { label: string; items: NavItem[]; collapsible?: boolean };
+type NavSection = {
+  label: string;
+  items: NavItem[];
+  /** When set, the section renders as a collapsible group with this header icon. */
+  collapsible?: boolean;
+  headerIcon?: React.ComponentType<{ className?: string }>;
+  /** Path prefix that auto-expands the group when the current route is inside it. */
+  basePath?: string;
+};
 
 const ADMIN_NAV_ITEMS: NavItem[] = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard },
@@ -43,22 +52,21 @@ const ADMIN_NAV_ITEMS: NavItem[] = [
   { href: "/admin/backup", label: "Backup & Restore", icon: Database },
 ];
 
+const CBO_NAV_ITEMS: NavItem[] = [
+  { href: "/cbo", label: "Overview", icon: LayoutDashboard },
+  { href: "/cbo/tasks", label: "All Tasks", icon: ListChecks },
+  { href: "/cbo/parked", label: "Parking Lot", icon: Archive },
+  { href: "/cbo/pages", label: "Static Pages", icon: FileText },
+];
+
 function navSectionsFor(role: SystemRole): NavSection[] {
   if (role === "SUPER_ADMIN") {
     return [{ label: "Super Admin", items: ADMIN_NAV_ITEMS }];
   }
   if (role === "CBO") {
-    return [{
-      label: "Chief Business Officer",
-      items: [
-        { href: "/cbo", label: "Overview", icon: LayoutDashboard },
-        { href: "/cbo/tasks", label: "All Tasks", icon: ListChecks },
-        { href: "/cbo/parked", label: "Parking Lot", icon: Archive },
-        { href: "/cbo/pages", label: "Static Pages", icon: FileText },
-      ],
-    }];
+    return [{ label: "Chief Business Officer", items: CBO_NAV_ITEMS }];
   }
-  // SM — own section + admin section
+  // SM — own section, then collapsible CBO (view-only) and Super Admin groups.
   return [
     {
       label: "Strategic Manager",
@@ -71,7 +79,8 @@ function navSectionsFor(role: SystemRole): NavSection[] {
         { href: "/sm/pages", label: "Static Pages", icon: FileText },
       ],
     },
-    { label: "Super Admin", items: ADMIN_NAV_ITEMS, collapsible: true },
+    { label: "Chief Business Officer", items: CBO_NAV_ITEMS, collapsible: true, headerIcon: Briefcase, basePath: "/cbo" },
+    { label: "Super Admin", items: ADMIN_NAV_ITEMS, collapsible: true, headerIcon: ShieldCheck, basePath: "/admin" },
   ];
 }
 
@@ -111,9 +120,19 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const [adminExpanded, setAdminExpanded] = useState(() => pathname.startsWith("/admin"));
   const sections = navSectionsFor(role);
   const bottomItems = bottomNavFor(role);
+
+  // Each collapsible group tracks its own open state, keyed by label; a group
+  // starts expanded when the current route is inside its basePath.
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(
+      sections
+        .filter((s) => s.collapsible)
+        .map((s) => [s.label, s.basePath ? pathname.startsWith(s.basePath) : false]),
+    ),
+  );
+  const toggleSection = (label: string) => setExpanded((prev) => ({ ...prev, [label]: !prev[label] }));
 
   const close = () => setOpen(false);
 
@@ -151,47 +170,9 @@ export function AppShell({
             </div>
           </div>
           <nav className="flex-1 overflow-y-auto px-3 pb-4">
-            {sections.map((section) => (
-              <div key={section.label}>
-                {section.collapsible ? (
-                  <>
-                    <button
-                      onClick={() => setAdminExpanded((v) => !v)}
-                      className="w-full flex items-center justify-between gap-2 px-3 pb-2 pt-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <ShieldCheck className="h-3.5 w-3.5" />
-                        {section.label}
-                      </div>
-                      <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", adminExpanded && "rotate-180")} />
-                    </button>
-                    {adminExpanded && (
-                      <ul className="space-y-1">
-                        {section.items.map((item) => (
-                          <li key={item.href}>
-                            <NavLink item={item} pathname={pathname} onClick={close} />
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <SectionLabel>{section.label}</SectionLabel>
-                    <ul className="space-y-1">
-                      {section.items.map((item) => (
-                        <li key={item.href}>
-                          <NavLink item={item} pathname={pathname} onClick={close} />
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                )}
-              </div>
-            ))}
-            {/* Page-owned sidebar slot. The CBO overview portals its Daily Follow-Up
-                calendar in here; every other page leaves it empty. */}
-            <div id="sidebar-slot" className="mt-3" />
+            {/* renderSlot: the CBO overview portals its Daily Follow-Up calendar into
+                the slot placed right under the "Overview" link — desktop sidebar only. */}
+            <SectionList sections={sections} pathname={pathname} expanded={expanded} onToggle={toggleSection} onNavigate={close} renderSlot />
           </nav>
           <div className="border-t border-border p-4">
             <div className="flex items-start justify-between gap-2">
@@ -224,44 +205,7 @@ export function AppShell({
                 </button>
               </div>
               <nav className="flex-1 overflow-y-auto px-3 py-3">
-                {sections.map((section) => (
-                  <div key={section.label}>
-                    {section.collapsible ? (
-                      <>
-                        <button
-                          onClick={() => setAdminExpanded((v) => !v)}
-                          className="w-full flex items-center justify-between gap-2 px-3 pb-2 pt-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                          <div className="flex items-center gap-1.5">
-                            <ShieldCheck className="h-3.5 w-3.5" />
-                            {section.label}
-                          </div>
-                          <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", adminExpanded && "rotate-180")} />
-                        </button>
-                        {adminExpanded && (
-                          <ul className="space-y-1">
-                            {section.items.map((item) => (
-                              <li key={item.href}>
-                                <NavLink item={item} pathname={pathname} onClick={close} />
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        <SectionLabel>{section.label}</SectionLabel>
-                        <ul className="space-y-1">
-                          {section.items.map((item) => (
-                            <li key={item.href}>
-                              <NavLink item={item} pathname={pathname} onClick={close} />
-                            </li>
-                          ))}
-                        </ul>
-                      </>
-                    )}
-                  </div>
-                ))}
+                <SectionList sections={sections} pathname={pathname} expanded={expanded} onToggle={toggleSection} onNavigate={close} />
               </nav>
               <div className="border-t border-border p-4">
                 <div className="text-xs font-semibold">{userName}</div>
@@ -335,5 +279,62 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
     <div className="px-3 pb-2 pt-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
       {children}
     </div>
+  );
+}
+
+/** Renders the nav sections — plain groups, plus collapsible groups (CBO, Super Admin). */
+function SectionList({
+  sections, pathname, expanded, onToggle, onNavigate, renderSlot = false,
+}: {
+  sections: NavSection[];
+  pathname: string;
+  expanded: Record<string, boolean>;
+  onToggle: (label: string) => void;
+  onNavigate: () => void;
+  /** When set, the CBO overview's calendar-portal slot renders under the "/cbo" item. */
+  renderSlot?: boolean;
+}) {
+  return (
+    <>
+      {sections.map((section) => {
+        const items = (
+          <ul className="space-y-1">
+            {section.items.map((item) => (
+              <li key={item.href}>
+                <NavLink item={item} pathname={pathname} onClick={onNavigate} />
+                {renderSlot && item.href === "/cbo" ? <div id="sidebar-slot" /> : null}
+              </li>
+            ))}
+          </ul>
+        );
+
+        if (!section.collapsible) {
+          return (
+            <div key={section.label}>
+              <SectionLabel>{section.label}</SectionLabel>
+              {items}
+            </div>
+          );
+        }
+
+        const HeaderIcon = section.headerIcon ?? ShieldCheck;
+        const isOpen = expanded[section.label] ?? false;
+        return (
+          <div key={section.label}>
+            <button
+              onClick={() => onToggle(section.label)}
+              className="w-full flex items-center justify-between gap-2 px-3 pb-2 pt-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <div className="flex items-center gap-1.5">
+                <HeaderIcon className="h-3.5 w-3.5" />
+                {section.label}
+              </div>
+              <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", isOpen && "rotate-180")} />
+            </button>
+            {isOpen && items}
+          </div>
+        );
+      })}
+    </>
   );
 }

@@ -1,13 +1,13 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { isCBO } from "@/lib/rbac";
+import { canViewCbo } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/page-header";
 import { StaticPagesClient } from "@/app/(portal)/sm/pages/static-pages-client";
 
 export default async function CboStaticPagesPage({ searchParams }: { searchParams: { q?: string; vertical?: string; date?: string } }) {
   const session = await auth();
-  if (!isCBO(session?.user.systemRole)) redirect("/");
+  if (!canViewCbo(session?.user.systemRole)) redirect("/");
 
   const verticals = await prisma.vertical.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } });
 

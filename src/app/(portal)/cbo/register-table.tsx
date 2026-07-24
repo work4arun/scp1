@@ -21,6 +21,7 @@ import { StatusBadge, PriorityBadge } from "@/components/status-badges";
 import { Users, Crown, History, ArrowUp, ArrowDown, ChevronsUpDown, X } from "lucide-react";
 import { classifyUpdate, timeOfDay } from "@/lib/followups";
 import { LinkifiedText } from "@/components/linkified-text";
+import { AttachmentChip } from "@/components/attachment-chip";
 
 export type RegisterEntry = {
   id: string;
@@ -28,6 +29,7 @@ export type RegisterEntry = {
   note: string;
   newStatus: TaskStatus | null;
   authorName: string;
+  files: { id: string; fileName: string; fileMime: string; fileSize: number }[];
 };
 
 export type RegisterRow = {
@@ -336,6 +338,13 @@ export function EntryLine({ entry }: { entry: RegisterEntry }) {
   return (
     <li className={`min-w-0 border-l-2 pl-2.5 text-sm ${isSystem ? "border-border text-muted-foreground" : "border-primary/50"}`}>
       <LinkifiedText text={entry.note} className={`whitespace-pre-line break-words ${isSystem ? "text-xs" : ""}`} />
+      {entry.files.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {entry.files.map((f) => (
+            <AttachmentChip key={f.id} file={{ fileId: f.id, name: f.fileName, mime: f.fileMime, size: f.fileSize }} />
+          ))}
+        </div>
+      ) : null}
       <div className="mt-0.5 text-[10px] text-muted-foreground">
         {timeOfDay(entry.createdAt)} · {entry.authorName}
         {isSystem ? <span className="ml-1 opacity-70">· {kind === "edit" ? "field edit" : "status change"}</span> : null}

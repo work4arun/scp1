@@ -34,6 +34,8 @@ export type FollowUpEntry = {
   note: string;
   newStatus: TaskStatus | null;
   authorName: string;
+  /** Attachments filed with this update. */
+  files: { id: string; fileName: string; fileMime: string; fileSize: number }[];
   task: {
     id: string;
     code: string;
@@ -424,6 +426,7 @@ function toRegisterRows(verticals: VerticalGroup[]): RegisterRow[] {
         note: e.note,
         newStatus: e.newStatus,
         authorName: e.authorName,
+        files: e.files,
       })),
     })),
   );

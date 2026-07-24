@@ -7,8 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { AlertTriangle, X, Mail, Send } from "lucide-react";
+import { AlertTriangle, X, Mail, Send, Paperclip } from "lucide-react";
 import { STATUS_OPTIONS } from "@/components/status-badges";
+import { formatBytes } from "@/lib/attachments";
 import { addUpdateAction } from "./actions";
 import { triggerEmailAction } from "./trigger-email-action";
 import type { TaskStatus } from "@prisma/client";
@@ -32,6 +33,9 @@ export function TaskUpdateForm({
   const [pending, startTransition] = useTransition();
   const [selectedStatus, setSelectedStatus] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  // Files are managed in state (not the native input) so the SM can add across
+  // several picks and remove individual ones before submitting.
+  const [files, setFiles] = useState<File[]>([]);
 
   // ── Email trigger state ───────────────────────────────────────────────
   const [emailMode, setEmailMode] = useState(false);
@@ -64,12 +68,14 @@ export function TaskUpdateForm({
     const form = new FormData(formEl);
     const note = String(form.get("note") || "").trim();
     const status = String(form.get("status") || "").trim();
-    if (!note && !status) { setError("Please add a note or pick a new status."); return; }
+    if (!note && !status && files.length === 0) { setError("Please add a note, pick a new status, or attach a file."); return; }
+    // The native file input carries no name; append the state-managed files instead.
+    for (const f of files) form.append("files", f);
     setError(null);
     startTransition(async () => {
       const result = await addUpdateAction(taskId, form);
       if (!result.success) { setError(result.error); return; }
-      formEl.reset(); setSelectedStatus(""); router.refresh();
+      formEl.reset(); setSelectedStatus(""); setFiles([]); router.refresh();
     });
   }
 
@@ -117,6 +123,54 @@ export function TaskUpdateForm({
       <div className="space-y-1.5">
         <Label htmlFor="note">What's the update? <span className="text-xs font-normal text-muted-foreground">(optional when changing status)</span></Label>
         <Textarea id="note" name="note" placeholder="Action taken, who responded, what's blocking…" />
+      </div>
+
+      {/* Optional attachments — any type, any number, up to 1 GB each. The CBO opens
+          or downloads each from the follow-up. */}
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">Attachments <span className="font-normal">(optional — any file type, add as many as you need)</span></Label>
+        <div>
+          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent">
+            <Paperclip className="h-3.5 w-3.5" />
+            {files.length > 0 ? "Add more files" : "Attach files"}
+            <input
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                const picked = Array.from(e.target.files ?? []);
+                // Accumulate across picks; skip exact duplicates (name+size).
+                setFiles((prev) => {
+                  const key = (f: File) => `${f.name}:${f.size}`;
+                  const seen = new Set(prev.map(key));
+                  return [...prev, ...picked.filter((f) => !seen.has(key(f)))];
+                });
+                e.target.value = "";
+              }}
+            />
+          </label>
+          {files.length > 0 ? (
+            <ul className="mt-2 space-y-1">
+              {files.map((f, i) => (
+                <li key={`${f.name}:${f.size}:${i}`} className="flex items-center justify-between gap-2 rounded border border-border bg-muted/30 px-2 py-1 text-xs">
+                  <span className="min-w-0 flex items-center gap-1.5">
+                    <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{f.name}</span>
+                    <span className="shrink-0 text-[10px] text-muted-foreground">{formatBytes(f.size)}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
+                    className="shrink-0 rounded p-0.5 hover:bg-accent"
+                    aria-label={`Remove ${f.name}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

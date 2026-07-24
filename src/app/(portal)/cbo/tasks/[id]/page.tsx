@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
-import { isCBO } from "@/lib/rbac";
+import { isCBO, canViewCbo } from "@/lib/rbac";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge, PriorityBadge } from "@/components/status-badges";
@@ -14,7 +14,9 @@ import { TaskTimeline } from "@/components/task-timeline";
 
 export default async function CboTaskDetail({ params, searchParams }: { params: { id: string }; searchParams: { chat?: string; order?: string } }) {
   const session = await auth();
-  if (!isCBO(session?.user.systemRole)) redirect("/");
+  if (!canViewCbo(session?.user.systemRole)) redirect("/");
+  // SM may view this page but not write CBO private notes — those stay CBO-only.
+  const canWriteNotes = isCBO(session?.user.systemRole);
 
   const task = await prisma.task.findUnique({
     where: { id: params.id },
@@ -22,7 +24,7 @@ export default async function CboTaskDetail({ params, searchParams }: { params: 
       vertical: true, priority: true,
       teamAssignments: { include: { team: true } },
       assignees: { include: { member: { include: { team: { select: { name: true } } } } } },
-      updates: { orderBy: { createdAt: "desc" }, include: { author: true } },
+      updates: { orderBy: { createdAt: "desc" }, include: { author: true, files: { select: { id: true, fileName: true, fileMime: true, fileSize: true }, orderBy: { createdAt: "asc" } } } },
       messages: { orderBy: { createdAt: "asc" } },
       cboNotes: { orderBy: { createdAt: "desc" }, include: { author: { select: { name: true } } } },
     },
@@ -84,7 +86,7 @@ export default async function CboTaskDetail({ params, searchParams }: { params: 
         <Card>
           <CardHeader><CardTitle>CBO Notes</CardTitle></CardHeader>
           <CardContent>
-            <TaskNotePanel taskId={task.id} notes={notesForPanel} readOnly={false} />
+            <TaskNotePanel taskId={task.id} notes={notesForPanel} readOnly={!canWriteNotes} />
           </CardContent>
         </Card>
       </div>
@@ -100,6 +102,7 @@ export default async function CboTaskDetail({ params, searchParams }: { params: 
               note: u.note,
               newStatus: u.newStatus,
               authorName: u.author.name,
+              files: u.files,
             }))}
             order={timelineOrder}
             toggleHref={`/cbo/tasks/${task.id}${timelineOrder === "asc" ? "?order=desc" : ""}#timeline`}

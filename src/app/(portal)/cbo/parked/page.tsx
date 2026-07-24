@@ -2,7 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { isCBO } from "@/lib/rbac";
+import { canViewCbo } from "@/lib/rbac";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge, PriorityBadge } from "@/components/status-badges";
@@ -11,7 +11,7 @@ import { TaskNotePanel } from "@/app/(portal)/cbo/task-note-panel";
 
 export default async function CboParkedPage() {
   const session = await auth();
-  if (!isCBO(session?.user.systemRole) || !session?.user.id) redirect("/");
+  if (!canViewCbo(session?.user.systemRole) || !session?.user.id) redirect("/");
 
   const tasks = await prisma.task.findMany({
     where: { status: "PARKED" }, orderBy: { updatedAt: "desc" },

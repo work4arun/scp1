@@ -14,6 +14,13 @@ export function isCBO(role?: SystemRole | null) {
   return role === "CBO" || role === "SUPER_ADMIN";
 }
 
+// SM may VIEW the CBO oversight pages (read-only) in addition to CBO/SUPER_ADMIN.
+// Writing CBO notes and CBO-only actions still go through isCBO(), so SM sees but
+// cannot act. Keep this distinct from isCBO — the write guards must not widen.
+export function canViewCbo(role?: SystemRole | null) {
+  return role === "CBO" || role === "SUPER_ADMIN" || role === "SM";
+}
+
 export function canManageTasks(role?: SystemRole | null) {
   return role === "SM" || role === "SUPER_ADMIN";
 }

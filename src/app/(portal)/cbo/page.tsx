@@ -1,14 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { isCBO } from "@/lib/rbac";
+import { canViewCbo } from "@/lib/rbac";
 import { FollowUpCalendar, DailyFollowUpPanel, buildFollowUpModel } from "./daily-followup";
 import { SidebarSlot } from "./sidebar-slot";
 import { monthRangeUtc, parseMonthKey } from "@/lib/followups";
 
 export default async function CboHome({ searchParams }: { searchParams: Record<string, string | undefined> }) {
   const session = await auth();
-  if (!isCBO(session?.user.systemRole) || !session?.user.id) redirect("/");
+  if (!canViewCbo(session?.user.systemRole) || !session?.user.id) redirect("/");
 
   // Daily follow-up calendar: ?m=YYYY-MM picks the month, ?d=YYYY-MM-DD the open day.
   const { year, month } = parseMonthKey(searchParams.m);
@@ -22,7 +22,9 @@ export default async function CboHome({ searchParams }: { searchParams: Record<s
   const monthUpdates = await prisma.taskUpdate.findMany({
     where: { createdAt: { gte: monthRange.gte, lt: monthRange.lt }, task: { status: { not: "DROPPED" } } },
     orderBy: { createdAt: "asc" },
-    include: {
+    select: {
+      id: true, createdAt: true, note: true, newStatus: true,
+      files: { select: { id: true, fileName: true, fileMime: true, fileSize: true }, orderBy: { createdAt: "asc" } },
       author: { select: { name: true } },
       task: {
         select: {
@@ -43,6 +45,7 @@ export default async function CboHome({ searchParams }: { searchParams: Record<s
       note: u.note,
       newStatus: u.newStatus,
       authorName: u.author.name,
+      files: u.files,
       task: {
         id: u.task.id,
         code: u.task.code,
@@ -65,7 +68,7 @@ export default async function CboHome({ searchParams }: { searchParams: Record<s
           Pages, and exists only while this page is mounted. Below lg the sidebar is
           hidden, so it renders inline here instead. */}
       <SidebarSlot>
-        <div className="px-3">
+        <div className="mt-1.5 mb-2">
           <FollowUpCalendar model={followUpModel} year={year} month={month} searchParams={searchParams} />
         </div>
       </SidebarSlot>

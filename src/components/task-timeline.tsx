@@ -13,6 +13,7 @@ import type { TaskStatus } from "@prisma/client";
 import { Badge } from "@/components/ui/badge";
 import { ArrowDownUp, CalendarDays } from "lucide-react";
 import { LinkifiedText } from "@/components/linkified-text";
+import { AttachmentChip } from "@/components/attachment-chip";
 import { classifyUpdate, dayKey, dayLabel, timeOfDay } from "@/lib/followups";
 
 export type TimelineEntry = {
@@ -21,6 +22,7 @@ export type TimelineEntry = {
   note: string;
   newStatus: TaskStatus | null;
   authorName: string;
+  files: { id: string; fileName: string; fileMime: string; fileSize: number }[];
 };
 
 /** Whole days between two day keys — used to surface follow-up gaps. */
@@ -126,6 +128,13 @@ export function TaskTimeline({
                         text={entry.note}
                         className={`whitespace-pre-line break-words ${isSystem ? "text-xs text-muted-foreground" : "text-sm"}`}
                       />
+                      {entry.files.length > 0 ? (
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {entry.files.map((f) => (
+                            <AttachmentChip key={f.id} file={{ fileId: f.id, name: f.fileName, mime: f.fileMime, size: f.fileSize }} />
+                          ))}
+                        </div>
+                      ) : null}
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
                         <span>{timeOfDay(entry.createdAt)}</span>
                         <span>· {entry.authorName}</span>

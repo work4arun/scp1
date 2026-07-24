@@ -22,12 +22,26 @@ export async function addUpdateAction(taskId: string, formData: FormData): Promi
   const newStatus = formData.get("status") as TaskStatus | "";
   const delayReason = (formData.get("delayReason") as string || "").trim() || null;
 
-  if (!rawNote && !newStatus) return { success: true };
+  // Optional attachments — any number, any type. Files alone (no note/status) are
+  // a valid update. Bytes are read here and stored in TaskUpdateFile rows.
+  const uploads = formData.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
+  const files = await Promise.all(
+    uploads.map(async (f) => ({
+      fileData: Buffer.from(await f.arrayBuffer()),
+      fileName: f.name,
+      fileMime: f.type || "application/octet-stream",
+      fileSize: f.size,
+    })),
+  );
+
+  if (!rawNote && !newStatus && files.length === 0) return { success: true };
   const note =
     rawNote ||
     (newStatus
       ? `🔄 Status → ${String(newStatus).replace(/_/g, " ")}`
-      : "");
+      : files.length > 0
+        ? `📎 Attached ${files.length} file${files.length === 1 ? "" : "s"}`
+        : "");
 
   try {
     await prisma.taskUpdate.create({
@@ -36,6 +50,7 @@ export async function addUpdateAction(taskId: string, formData: FormData): Promi
         authorId: session.user.id,
         note,
         newStatus: newStatus || null,
+        ...(files.length > 0 ? { files: { create: files } } : {}),
       },
     });
 

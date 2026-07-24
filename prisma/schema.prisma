@@ -343,5 +343,23 @@ model TaskUpdate {
   newStatus TaskStatus?
   createdAt DateTime @default(now())
 
+  files     TaskUpdateFile[]
+
   @@index([taskId])
+}
+
+// One attachment on a status update; an update may carry many. Bytes live in
+// Postgres like the other binary columns (see CLAUDE.md); served by
+// /api/task-update-files/[id]. Uploads are capped at 1 GB (next.config.js).
+model TaskUpdateFile {
+  id        String     @id @default(cuid())
+  updateId  String
+  update    TaskUpdate @relation(fields: [updateId], references: [id], onDelete: Cascade)
+  fileName  String
+  fileMime  String
+  fileSize  Int
+  fileData  Bytes
+  createdAt DateTime   @default(now())
+
+  @@index([updateId])
 }

@@ -11,6 +11,7 @@ import { TaskUpdateForm } from "./update-form";
 import { TaskActions } from "./task-actions";
 import { ConversationButton } from "@/components/conversation-button";
 import { LinkifiedText } from "@/components/linkified-text";
+import { AttachmentChip } from "@/components/attachment-chip";
 import { SmTaskChat } from "./sm-chat";
 
 export default async function TaskDetail({ params, searchParams }: { params: { id: string }; searchParams: { chat?: string } }) {
@@ -23,7 +24,7 @@ export default async function TaskDetail({ params, searchParams }: { params: { i
       vertical: true, priority: true,
       teamAssignments: { include: { team: true } },
       assignees: { include: { member: { include: { team: { select: { name: true } } } } } },
-      updates: { orderBy: { createdAt: "desc" }, include: { author: true } },
+      updates: { orderBy: { createdAt: "desc" }, include: { author: true, files: { select: { id: true, fileName: true, fileMime: true, fileSize: true }, orderBy: { createdAt: "asc" } } } },
       messages: { orderBy: { createdAt: "asc" } },
     },
   });
@@ -91,6 +92,13 @@ export default async function TaskDetail({ params, searchParams }: { params: { i
                     <div className="text-xs text-muted-foreground" title={formatDate(u.createdAt)}>{formatRelative(u.createdAt)}</div>
                   </div>
                   <LinkifiedText text={u.note} className="mt-1.5 whitespace-pre-line break-words text-sm" />
+                  {u.files.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {u.files.map((f) => (
+                        <AttachmentChip key={f.id} file={{ fileId: f.id, name: f.fileName, mime: f.fileMime, size: f.fileSize }} />
+                      ))}
+                    </div>
+                  ) : null}
                   {u.newStatus ? <div className="mt-2"><Badge variant="info">Status → {u.newStatus.replace(/_/g, " ")}</Badge></div> : null}
                 </div>
               ))}
