@@ -300,6 +300,23 @@ model Task {
   @@index([droppedAt])
 }
 
+// Nestable folder for organising static pages, like a file explorer. A null
+// parentId is a root folder; deleting a folder cascades to its subfolders and
+// the pages inside them.
+model StaticFolder {
+  id        String         @id @default(cuid())
+  name      String
+  parentId  String?
+  parent    StaticFolder?  @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children  StaticFolder[] @relation("FolderTree")
+  pages     StaticPage[]
+  createdBy String
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([parentId])
+}
+
 model StaticPage {
   id          String   @id @default(cuid())
   pageName    String
@@ -307,11 +324,15 @@ model StaticPage {
   fileType    String   // "pdf" | "html" | "ppt"
   fileData    Bytes
   verticalId  String?
+  // null folderId = the root of the explorer.
+  folderId    String?
+  folder      StaticFolder? @relation(fields: [folderId], references: [id], onDelete: Cascade)
   uploadedBy  String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@index([verticalId])
+  @@index([folderId])
   @@index([createdAt])
 }
 

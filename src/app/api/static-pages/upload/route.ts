@@ -14,9 +14,16 @@ export async function POST(request: NextRequest) {
     const pageName = String(form.get("pageName") || "").trim();
     const file = form.get("file") as File | null;
     const verticalId = String(form.get("verticalId") || "").trim() || null;
+    const folderId = String(form.get("folderId") || "").trim() || null;
 
     if (!pageName) return NextResponse.json({ error: "Page name is required." }, { status: 400 });
     if (!file || file.size === 0) return NextResponse.json({ error: "File is required." }, { status: 400 });
+
+    // Reject an upload aimed at a folder that no longer exists.
+    if (folderId) {
+      const folder = await prisma.staticFolder.findUnique({ where: { id: folderId }, select: { id: true } });
+      if (!folder) return NextResponse.json({ error: "The folder no longer exists. Please refresh." }, { status: 400 });
+    }
 
     const fileName = file.name;
     const ext = fileName.split(".").pop()?.toLowerCase() || "";
@@ -28,7 +35,7 @@ export async function POST(request: NextRequest) {
     const fileData = Buffer.from(arrayBuffer);
 
     const page = await prisma.staticPage.create({
-      data: { pageName, fileName, fileType, fileData, verticalId, uploadedBy: session.user.name || session.user.id },
+      data: { pageName, fileName, fileType, fileData, verticalId, folderId, uploadedBy: session.user.name || session.user.id },
     });
 
     return NextResponse.json({ success: true, id: page.id });

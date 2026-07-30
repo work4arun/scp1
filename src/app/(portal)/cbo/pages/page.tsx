@@ -1,39 +1,57 @@
+import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { canViewCbo } from "@/lib/rbac";
-import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/page-header";
-import { StaticPagesClient } from "@/app/(portal)/sm/pages/static-pages-client";
+import { FileExplorer } from "@/app/(portal)/sm/pages/file-explorer";
+import { StaticPagesList } from "@/app/(portal)/sm/pages/static-pages-list";
+import { PagesViewToggle, resolvePagesView } from "@/app/(portal)/sm/pages/pages-view-toggle";
+import { PagesViewMemory } from "@/app/(portal)/sm/pages/pages-view-memory";
+import { loadFolderLevel, loadPagesList } from "@/app/(portal)/sm/pages/folder-data";
 
-export default async function CboStaticPagesPage({ searchParams }: { searchParams: { q?: string; vertical?: string; date?: string } }) {
+export default async function CboStaticPagesPage({
+  searchParams,
+}: {
+  searchParams: { folder?: string; view?: string; q?: string; vertical?: string; date?: string };
+}) {
   const session = await auth();
   if (!canViewCbo(session?.user.systemRole)) redirect("/");
 
-  const verticals = await prisma.vertical.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } });
-
-  const where: any = {};
-  if (searchParams.vertical) where.verticalId = searchParams.vertical;
-  if (searchParams.date) {
-    const d = new Date(searchParams.date);
-    const next = new Date(d); next.setDate(next.getDate() + 1);
-    where.createdAt = { gte: d, lt: next };
-  }
-  if (searchParams.q) {
-    const q = searchParams.q.toLowerCase();
-    where.OR = [{ pageName: { contains: q, mode: "insensitive" } }, { fileName: { contains: q, mode: "insensitive" } }];
-  }
-
-  const pages = await prisma.staticPage.findMany({ where, orderBy: { createdAt: "desc" } });
+  const view = resolvePagesView(searchParams);
+  const verticals = await prisma.vertical.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" }, select: { id: true, code: true, name: true } });
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <PageHeader title="Static Pages" description="View uploaded PDF, HTML, and PPT files." />
-      <StaticPagesClient
-        pages={pages.map((p) => ({ id: p.id, pageName: p.pageName, fileName: p.fileName, fileType: p.fileType, verticalId: p.verticalId, createdAt: p.createdAt.toISOString() })) as any}
-        verticals={verticals}
-        role="CBO"
-        activeFilters={searchParams}
+      <PagesViewMemory view={view} />
+      <PageHeader
+        title="Static Pages"
+        description={view === "list" ? "Browse all files by vertical, with filters." : "Browse PDF, HTML, and PPT files by folder."}
+        action={<PagesViewToggle view={view} rolePath="cbo" />}
       />
+      {view === "list" ? (
+        <StaticPagesList
+          role="CBO"
+          pages={await loadPagesList(verticals, searchParams)}
+          verticals={verticals}
+          activeFilters={searchParams}
+        />
+      ) : (
+        <CboFolderView folder={searchParams.folder ?? null} />
+      )}
     </div>
+  );
+}
+
+async function CboFolderView({ folder }: { folder: string | null }) {
+  const level = await loadFolderLevel(folder);
+  return (
+    <FileExplorer
+      role="CBO"
+      currentFolderId={level.currentFolderId}
+      breadcrumb={level.breadcrumb}
+      folders={level.folders}
+      pages={level.pages}
+      verticals={[]}
+    />
   );
 }
