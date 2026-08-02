@@ -153,6 +153,13 @@ model SmtpConfig {
   updatedAt DateTime @updatedAt
 }
 
+model AppConfig {
+  id           String   @id @default("default")
+  dashboardUrl String   @default("https://report.rankuhigher.com")
+  updatedAt    DateTime @updatedAt
+  updatedById  String?
+}
+
 model EmailLog {
   id          String   @id @default(cuid())
   taskId      String?

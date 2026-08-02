@@ -22,13 +22,15 @@ import {
   ShieldCheck,
   FileText,
   Briefcase,
+  ExternalLink,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SystemRole } from "@prisma/client";
 import { SignOutButton } from "@/components/sign-out-button";
 import { DarkModeToggle } from "@/components/dark-mode-toggle";
 
-type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }> };
+type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; external?: boolean };
 type NavSection = {
   label: string;
   items: NavItem[];
@@ -50,6 +52,7 @@ const ADMIN_NAV_ITEMS: NavItem[] = [
   { href: "/admin/teams", label: "Teams", icon: Users },
   { href: "/admin/emails", label: "Emails", icon: Mail },
   { href: "/admin/backup", label: "Backup & Restore", icon: Database },
+  { href: "/admin/config", label: "Config", icon: Settings },
 ];
 
 const CBO_NAV_ITEMS: NavItem[] = [
@@ -59,12 +62,14 @@ const CBO_NAV_ITEMS: NavItem[] = [
   { href: "/cbo/pages", label: "Static Pages", icon: FileText },
 ];
 
-function navSectionsFor(role: SystemRole): NavSection[] {
+function navSectionsFor(role: SystemRole, dashboardUrl?: string): NavSection[] {
+  const dashboardItem: NavItem = { href: dashboardUrl || "https://report.rankuhigher.com", label: "Dashboard", icon: ExternalLink, external: true };
+
   if (role === "SUPER_ADMIN") {
     return [{ label: "Super Admin", items: ADMIN_NAV_ITEMS }];
   }
   if (role === "CBO") {
-    return [{ label: "Chief Business Officer", items: CBO_NAV_ITEMS }];
+    return [{ label: "Chief Business Officer", items: [...CBO_NAV_ITEMS.slice(0, 3), dashboardItem, ...CBO_NAV_ITEMS.slice(3)] }];
   }
   // SM — own section, then collapsible CBO (view-only) and Super Admin groups.
   return [
@@ -76,10 +81,11 @@ function navSectionsFor(role: SystemRole): NavSection[] {
         { href: "/sm/new-task", label: "New Task", icon: Inbox },
         { href: "/sm/notes", label: "Notes from CBO", icon: StickyNote },
         { href: "/sm/parked", label: "Parking Lot", icon: Archive },
+        dashboardItem,
         { href: "/sm/pages", label: "Static Pages", icon: FileText },
       ],
     },
-    { label: "Chief Business Officer", items: CBO_NAV_ITEMS, collapsible: true, headerIcon: Briefcase, basePath: "/cbo" },
+    { label: "Chief Business Officer", items: [...CBO_NAV_ITEMS.slice(0, 3), dashboardItem, ...CBO_NAV_ITEMS.slice(3)], collapsible: true, headerIcon: Briefcase, basePath: "/cbo" },
     { label: "Super Admin", items: ADMIN_NAV_ITEMS, collapsible: true, headerIcon: ShieldCheck, basePath: "/admin" },
   ];
 }
@@ -111,16 +117,18 @@ export function AppShell({
   userName,
   userEmail,
   darkModeToggleEnabled = false,
+  dashboardUrl,
 }: {
   children: React.ReactNode;
   role: SystemRole;
   userName: string;
   userEmail: string;
   darkModeToggleEnabled?: boolean;
+  dashboardUrl?: string;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const sections = navSectionsFor(role);
+  const sections = navSectionsFor(role, dashboardUrl);
   const bottomItems = bottomNavFor(role);
 
   // Each collapsible group tracks its own open state, keyed by label; a group
@@ -259,6 +267,22 @@ function NavLink({
 }) {
   const active = pathname === item.href || pathname.startsWith(item.href + "/");
   const Icon = item.icon;
+
+  if (item.external) {
+    return (
+      <a
+        href={item.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={onClick}
+        className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors text-foreground hover:bg-accent"
+      >
+        <Icon className="h-4 w-4 shrink-0" />
+        <span className="truncate">{item.label}</span>
+      </a>
+    );
+  }
+
   return (
     <Link
       href={item.href}
