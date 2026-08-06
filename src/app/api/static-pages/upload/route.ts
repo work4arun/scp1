@@ -15,15 +15,31 @@ export async function POST(request: NextRequest) {
     const file = form.get("file") as File | null;
     const verticalId = String(form.get("verticalId") || "").trim() || null;
     const folderId = String(form.get("folderId") || "").trim() || null;
+    const mode = String(form.get("mode") || "file").trim();
 
     if (!pageName) return NextResponse.json({ error: "Page name is required." }, { status: 400 });
-    if (!file || file.size === 0) return NextResponse.json({ error: "File is required." }, { status: 400 });
 
     // Reject an upload aimed at a folder that no longer exists.
     if (folderId) {
       const folder = await prisma.staticFolder.findUnique({ where: { id: folderId }, select: { id: true } });
       if (!folder) return NextResponse.json({ error: "The folder no longer exists. Please refresh." }, { status: 400 });
     }
+
+    // ── Link mode: store a URL instead of a binary file.
+    if (mode === "link") {
+      const linkUrl = String(form.get("linkUrl") || "").trim();
+      if (!linkUrl) return NextResponse.json({ error: "Link URL is required." }, { status: 400 });
+      if (!/^https?:\/\/\S+$/i.test(linkUrl)) {
+        return NextResponse.json({ error: "Link must start with http:// or https://" }, { status: 400 });
+      }
+      const page = await prisma.staticPage.create({
+        data: { pageName, fileName: null, fileType: "link", fileData: null, linkUrl, verticalId, folderId, uploadedBy: session.user.name || session.user.id },
+      });
+      return NextResponse.json({ success: true, id: page.id });
+    }
+
+    // ── File mode (default): store binary content in the database.
+    if (!file || file.size === 0) return NextResponse.json({ error: "File is required." }, { status: 400 });
 
     const fileName = file.name;
     const ext = fileName.split(".").pop()?.toLowerCase() || "";

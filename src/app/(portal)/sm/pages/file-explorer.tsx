@@ -20,13 +20,13 @@ import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import {
   Folder, FolderPlus, Upload, ChevronRight, Home, Eye, Download, Trash2,
-  Pencil, X, FileText, AlertTriangle, Search,
+  Pencil, X, FileText, AlertTriangle, Search, Link2, FileUp,
 } from "lucide-react";
 import { createFolderAction, renameFolderAction, deleteFolderAction, deletePageAction } from "./actions";
 
 export type Crumb = { id: string; name: string };
 export type FolderRow = { id: string; name: string; childCount: number; pageCount: number };
-export type PageRow = { id: string; pageName: string; fileName: string; fileType: string; createdAt: string };
+export type PageRow = { id: string; pageName: string; fileName: string | null; fileType: string; linkUrl: string | null; createdAt: string };
 export type Vertical = { id: string; code: string; name: string };
 
 export function FileExplorer({
@@ -55,6 +55,7 @@ export function FileExplorer({
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadMode, setUploadMode] = useState<"file" | "link">("file");
 
   const folderHref = (id: string | null) => (id ? `/${rolePath}/pages?view=folder&folder=${id}` : `/${rolePath}/pages?view=folder`);
 
@@ -112,11 +113,13 @@ export function FileExplorer({
     setUploading(true);
     const form = new FormData(e.currentTarget);
     if (currentFolderId) form.set("folderId", currentFolderId);
+    form.set("mode", uploadMode);
+    if (uploadMode === "link") form.delete("file");
     try {
       const res = await fetch("/api/static-pages/upload", { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) { setUploadError(data.error || "Upload failed"); return; }
-      setUploadOpen(false); router.refresh();
+      setUploadOpen(false); setUploadMode("file"); router.refresh();
     } catch { setUploadError("Network error"); }
     finally { setUploading(false); }
   }
@@ -198,33 +201,40 @@ export function FileExplorer({
               </li>
             ))}
 
-            {shownPages.map((p) => (
+            {shownPages.map((p) => {
+              const isLink = p.fileType === "link";
+              const openHref = isLink ? p.linkUrl ?? "#" : `/api/static-pages/${p.id}`;
+              const subName = isLink ? p.linkUrl ?? "Link" : p.fileName;
+              return (
               <li key={p.id} className="flex items-center gap-2 px-3 py-2.5 hover:bg-accent/50">
-                {/* Clicking anywhere on the file opens it in a new tab, same as the eye icon. */}
-                <a href={`/api/static-pages/${p.id}`} target="_blank" rel="noopener noreferrer" title="Open file" className="flex min-w-0 flex-1 items-center gap-2.5">
-                  <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
+                {/* Clicking anywhere on the row opens it in a new tab, same as the eye icon. */}
+                <a href={openHref} target="_blank" rel="noopener noreferrer" title={isLink ? "Open link" : "Open file"} className="flex min-w-0 flex-1 items-center gap-2.5">
+                  {isLink ? <Link2 className="h-5 w-5 shrink-0 text-primary" /> : <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />}
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium">{p.pageName}</span>
                     <span className="block truncate text-[10px] text-muted-foreground">
-                      {p.fileName} · {p.fileType.toUpperCase()} · {new Date(p.createdAt).toLocaleDateString("en-IN")}
+                      {subName} · {p.fileType.toUpperCase()} · {new Date(p.createdAt).toLocaleDateString("en-IN")}
                     </span>
                   </span>
                 </a>
                 <div className="flex shrink-0 items-center gap-1">
-                  <Link href={`/api/static-pages/${p.id}`} target="_blank" rel="noopener noreferrer" title="View" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
+                  <Link href={openHref} target="_blank" rel="noopener noreferrer" title={isLink ? "Open link" : "View"} className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
                     <Eye className="h-4 w-4" />
                   </Link>
-                  <Link href={`/api/static-pages/${p.id}?download=1`} title="Download" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
-                    <Download className="h-4 w-4" />
-                  </Link>
+                  {!isLink && (
+                    <Link href={`/api/static-pages/${p.id}?download=1`} title="Download" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
+                      <Download className="h-4 w-4" />
+                    </Link>
+                  )}
                   {canEdit && (
-                    <button onClick={() => removePage(p)} disabled={pending} title="Delete file" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
+                    <button onClick={() => removePage(p)} disabled={pending} title="Delete" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   )}
                 </div>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </div>
@@ -261,9 +271,27 @@ export function FileExplorer({
 
       {/* Upload modal */}
       {uploadOpen && (
-        <Modal title={`Upload file${breadcrumb.length ? ` to ${breadcrumb[breadcrumb.length - 1].name}` : ""}`} onClose={() => setUploadOpen(false)}>
+        <Modal title={`Upload${uploadMode === "link" ? " link" : " file"}${breadcrumb.length ? ` to ${breadcrumb[breadcrumb.length - 1].name}` : ""}`} onClose={() => setUploadOpen(false)}>
           {uploadError && <div className="rounded bg-destructive/5 px-3 py-2 text-sm text-destructive">{uploadError}</div>}
           <form onSubmit={handleUpload} className="space-y-4">
+            {/* Mode toggle: upload a file or paste a link. */}
+            <div className="grid grid-cols-2 gap-2 rounded-lg border border-border p-1">
+              <button
+                type="button"
+                onClick={() => setUploadMode("file")}
+                className={`flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors ${uploadMode === "file" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"}`}
+              >
+                <FileUp className="h-3.5 w-3.5" /> Upload File
+              </button>
+              <button
+                type="button"
+                onClick={() => setUploadMode("link")}
+                className={`flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors ${uploadMode === "link" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"}`}
+              >
+                <Link2 className="h-3.5 w-3.5" /> Add Link
+              </button>
+            </div>
+
             <div className="space-y-1.5">
               <Label htmlFor="pageName">Page name *</Label>
               <Input id="pageName" name="pageName" required placeholder="e.g., Quarterly Report" />
@@ -275,13 +303,25 @@ export function FileExplorer({
                 {verticals.map((v) => <option key={v.id} value={v.id}>{v.code} — {v.name}</option>)}
               </Select>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="file">File (PDF, HTML, PPT)</Label>
-              <Input id="file" name="file" type="file" required accept=".pdf,.html,.ppt,.pptx" className="h-9 text-sm" />
-            </div>
+
+            {uploadMode === "file" ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="file">File (PDF, HTML, PPT)</Label>
+                <Input id="file" name="file" type="file" required accept=".pdf,.html,.ppt,.pptx" className="h-9 text-sm" />
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="linkUrl">Link URL *</Label>
+                <Input id="linkUrl" name="linkUrl" type="url" required placeholder="https://example.com/report" className="h-9 text-sm" />
+                <p className="text-[11px] text-muted-foreground">
+                  Opens in a new tab when clicked. Must start with http:// or https://
+                </p>
+              </div>
+            )}
+
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="outline" onClick={() => setUploadOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={uploading}>{uploading ? "Uploading…" : "Upload"}</Button>
+              <Button type="submit" disabled={uploading}>{uploading ? "Adding…" : uploadMode === "link" ? "Add Link" : "Upload"}</Button>
             </div>
           </form>
         </Modal>

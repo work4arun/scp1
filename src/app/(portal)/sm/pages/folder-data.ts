@@ -25,6 +25,7 @@ export async function loadPagesList(
     where.OR = [
       { pageName: { contains: q, mode: "insensitive" } },
       { fileName: { contains: q, mode: "insensitive" } },
+      { linkUrl: { contains: q, mode: "insensitive" } },
     ];
   }
 
@@ -32,7 +33,7 @@ export async function loadPagesList(
   const rows = await prisma.staticPage.findMany({
     where,
     orderBy: { createdAt: "desc" },
-    select: { id: true, pageName: true, fileName: true, fileType: true, verticalId: true, createdAt: true, folder: { select: { name: true } } },
+    select: { id: true, pageName: true, fileName: true, fileType: true, linkUrl: true, verticalId: true, createdAt: true, folder: { select: { name: true } } },
   });
 
   return rows.map((p) => ({
@@ -40,6 +41,7 @@ export async function loadPagesList(
     pageName: p.pageName,
     fileName: p.fileName,
     fileType: p.fileType,
+    linkUrl: p.linkUrl,
     verticalCode: p.verticalId ? codeById.get(p.verticalId) ?? null : null,
     folderName: p.folder?.name ?? null,
     createdAt: p.createdAt.toISOString(),
@@ -85,7 +87,7 @@ export async function loadFolderLevel(folderId: string | null): Promise<{
     prisma.staticPage.findMany({
       where: { folderId: effectiveId },
       orderBy: { createdAt: "desc" },
-      select: { id: true, pageName: true, fileName: true, fileType: true, createdAt: true },
+      select: { id: true, pageName: true, fileName: true, fileType: true, linkUrl: true, createdAt: true },
     }),
   ]);
 
@@ -93,6 +95,6 @@ export async function loadFolderLevel(folderId: string | null): Promise<{
     currentFolderId: effectiveId,
     breadcrumb,
     folders: folderRows.map((f) => ({ id: f.id, name: f.name, childCount: f._count.children, pageCount: f._count.pages })),
-    pages: pageRows.map((p) => ({ id: p.id, pageName: p.pageName, fileName: p.fileName, fileType: p.fileType, createdAt: p.createdAt.toISOString() })),
+    pages: pageRows.map((p) => ({ id: p.id, pageName: p.pageName, fileName: p.fileName, fileType: p.fileType, linkUrl: p.linkUrl, createdAt: p.createdAt.toISOString() })),
   };
 }

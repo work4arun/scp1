@@ -327,9 +327,10 @@ model StaticFolder {
 model StaticPage {
   id          String   @id @default(cuid())
   pageName    String
-  fileName    String
-  fileType    String   // "pdf" | "html" | "ppt"
-  fileData    Bytes
+  fileName    String?
+  fileType    String   // "pdf" | "html" | "ppt" | "link"
+  fileData    Bytes?
+  linkUrl     String?
   verticalId  String?
   // null folderId = the root of the explorer.
   folderId    String?
