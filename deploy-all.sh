@@ -25,7 +25,7 @@ DB_USER="scp_user1"
 DB_PASS="scp_pass_db123"
 DB_NAME="scp_db"
 AUTH_SECRET="super-secret-key-change-in-production-2025"
-APP_DOMAIN="rtc.systitsoft.in"
+APP_DOMAIN="scp-rtc.systitsoft.in"
 # ─────────────────────────────────────────────────────────────────────────────
 
 PUBLIC_IP="${PUBLIC_IP:-}"
@@ -84,6 +84,7 @@ obtain_cert() {
 
   log "Obtaining SSL certificate for ${domain}..."
   docker compose down 2>/dev/null || true
+  docker rm -f scp-nginx 2>/dev/null || true
 
   if ! command -v certbot >/dev/null 2>&1; then
     case "$OS_ID" in
@@ -156,6 +157,12 @@ build_and_start() {
 
   log "Building Docker images..."
   docker compose build
+
+  # Old deployments use the same fixed container names (scp-db/app/nginx) from a
+  # different compose project dir; remove them so the new stack can take over.
+  # The named volume scp_pgdata is preserved, so the existing database is kept.
+  log "Removing any previous scp-* stack containers..."
+  docker rm -f scp-nginx scp-app scp-db 2>/dev/null || true
 
   log "Starting Postgres first..."
   docker compose up -d db

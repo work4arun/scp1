@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateToken } from "@/lib/token-auth";
 
 export async function GET(request: NextRequest) {
-  const publicUrl = process.env.NEXT_PUBLIC_APP_URL || "https://rtc.systitsoft.in";
+  const publicUrl = process.env.NEXT_PUBLIC_APP_URL || "https://scp-rtc.systitsoft.in";
   const token = request.nextUrl.searchParams.get("token");
   const taskId = request.nextUrl.searchParams.get("taskId");
 
