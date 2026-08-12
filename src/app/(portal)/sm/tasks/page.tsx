@@ -52,7 +52,7 @@ export default async function TasksPage({ searchParams }: { searchParams: TaskFi
   return (
     <div className="space-y-6 animate-fade-in">
       <PageHeader title="Tasks" description="All active tasks across verticals." action={<Button asChild size="lg"><Link href="/sm/new-task"><Plus className="h-4 w-4" /> New task</Link></Button>} />
-      <TaskFilterBar active={searchParams as Record<string, string | undefined>} basePath="/sm/tasks" options={{ verticals: verticals.map((v) => ({ id: v.id, code: v.code, name: v.name })), priorities: priorities.map((p) => ({ id: p.id, code: p.code, label: p.label })), teams: teams.map((t) => ({ id: t.id, name: t.name })) }} />
+      <TaskFilterBar active={searchParams as Record<string, string | string[] | undefined>} basePath="/sm/tasks" options={{ verticals: verticals.map((v) => ({ id: v.id, code: v.code, name: v.name })), priorities: priorities.map((p) => ({ id: p.id, code: p.code, label: p.label })), teams: teams.map((t) => ({ id: t.id, name: t.name })) }} />
       <Card><CardHeader><CardTitle>{rows.length} task{rows.length !== 1 ? "s" : ""}</CardTitle></CardHeader>
         <CardContent className="space-y-2">
           {rows.length === 0 ? <div className="text-sm text-muted-foreground py-6 text-center">No tasks found.</div> : rows.map((r) => {

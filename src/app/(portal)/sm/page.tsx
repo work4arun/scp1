@@ -78,7 +78,7 @@ export default async function SmHome({ searchParams }: { searchParams: TaskFilte
 
       {/* Filter bar - same as Tasks page */}
       <TaskFilterBar
-        active={searchParams as Record<string, string | undefined>}
+        active={searchParams as Record<string, string | string[] | undefined>}
         basePath="/sm"
         options={{
           verticals: verticals.map((v) => ({ id: v.id, code: v.code, name: v.name })),
