@@ -67,10 +67,21 @@ install_deps() {
 
 pull_code() {
   cd "${SCRIPT_DIR}"
+  local script_before
+  script_before=$(sha256sum "$0" 2>/dev/null | cut -d' ' -f1)
   log "Pulling latest code (force-resetting any local changes)..."
   git fetch --all --prune
   git checkout "${GIT_BRANCH}"
   git reset --hard "origin/${GIT_BRANCH}"
+  local script_after
+  script_after=$(sha256sum "$0" 2>/dev/null | cut -d' ' -f1)
+  # The running copy of this script may be stale (the workflow invokes it before
+  # pulling). If the pull updated it, restart with the latest version so config
+  # like APP_DOMAIN is taken from the new code instead of the old.
+  if [ "$script_before" != "$script_after" ]; then
+    log "deploy-all.sh changed during pull — re-running the latest version."
+    exec bash "$0" "$@"
+  fi
   log "Now at commit: $(git rev-parse --short HEAD)"
 }
 

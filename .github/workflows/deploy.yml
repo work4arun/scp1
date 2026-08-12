@@ -18,4 +18,10 @@ jobs:
           script: |
             set -e
             cd ~/scp_project/scp1
+            # Update the checkout BEFORE running deploy-all.sh so the deploy
+            # script itself is the latest version (running a stale deploy-all.sh
+            # used the old config for the whole run even after it pulled).
+            git fetch --all --prune
+            git checkout main
+            git reset --hard origin/main
             bash deploy-all.sh
