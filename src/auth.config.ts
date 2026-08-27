@@ -7,7 +7,12 @@ export const authConfig: NextAuthConfig = {
   callbacks: {
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
-      const path = nextUrl.pathname;
+      // With BASE_PATH set (e.g. /scp, /cbo-scp) the middleware sees the full
+      // pathname including the prefix. Strip it so the route checks below match
+      // the unprefixed app routes. Falls back to the raw path when no base path.
+      const base = nextUrl.basePath || "";
+      const raw = nextUrl.pathname;
+      const path = base && raw.startsWith(base) ? raw.slice(base.length) || "/" : raw;
 
       const isPublic =
         path === "/" ||
