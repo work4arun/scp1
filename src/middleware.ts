@@ -9,6 +9,13 @@ export default async function middleware(req: import("next/server").NextRequest)
   if (res && res instanceof NextResponse) {
     res.headers.set("x-debug-base", req.nextUrl.basePath || "(none)");
     res.headers.set("x-debug-path", req.nextUrl.pathname);
+    res.headers.set("x-debug-handler", "true");
+  } else {
+    const r = NextResponse.next();
+    r.headers.set("x-debug-base", req.nextUrl.basePath || "(none)");
+    r.headers.set("x-debug-path", req.nextUrl.pathname);
+    r.headers.set("x-debug-handler", "false");
+    return r;
   }
   return res;
 }
