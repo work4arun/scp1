@@ -28,7 +28,7 @@ export default async function middleware(req: import("next/server").NextRequest)
         url.pathname = `${base}/login`;
         const newRes = NextResponse.redirect(url.toString(), (res as Response).status);
         // carry over authjs cookies set by NextAuth (csrf, callback-url)
-        res.headers.forEach((value, key) => {
+        (res as Response).headers.forEach((value, key) => {
           if (key.toLowerCase().startsWith("set-cookie")) {
             newRes.headers.append("set-cookie", value);
           }
