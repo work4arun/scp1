@@ -27,6 +27,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
   trustHost: true,
+  // Under sub-path hosting (BASE_PATH set, e.g. /cbo-scp) the NextAuth routes are
+  // mounted at /<basePath>/api/auth. NextAuth's own default derives basePath from
+  // the NEXTAUTH_URL pathname (which would be /<basePath>) and then fails to parse
+  // the action because the path is /<basePath>/api/auth/<action>. Pin the auth
+  // basePath to the full mount point so parseActionAndProviderId strips it.
+  basePath: process.env.BASE_PATH
+    ? `${process.env.BASE_PATH.replace(/\/$/, "")}/api/auth`
+    : "/api/auth",
   secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
   providers: [
     Credentials({
