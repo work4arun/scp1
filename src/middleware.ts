@@ -14,7 +14,7 @@ export default async function middleware(req: import("next/server").NextRequest)
   if (!res || typeof (res as any).headers?.set !== "function") {
     return NextResponse.next();
   }
-  const response = res as Response;
+  const response = res as unknown as Response;
 
   // NextAuth redirects to pages.signIn = "/login". Under sub-path hosting the
   // login page lives at /<basePath>/login, so rewrite the Location to include
