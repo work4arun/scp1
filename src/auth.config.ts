@@ -1,12 +1,15 @@
 // Edge-compatible auth config for middleware (no DB calls here).
 import type { NextAuthConfig } from "next-auth";
+import { NextResponse } from "next/server";
 
 /**
- * NextAuth runs the middleware against a NextURL where `basePath` may not be
- * populated (it isn't in this NextAuth version), so `pathname` can retain the
- * BASE_PATH prefix (e.g. `/cbo-scp/login`). To stay correct under both root
- * hosting and sub-path hosting we judge a route as public if *either* the raw
- * pathname or the path with its leading segment removed matches a public route.
+ * NextAuth runs the middleware against a NextURL whose `pathname` is already
+ * base-stripped but whose `basePath` is populated (e.g. basePath="/cbo-scp",
+ * pathname="/login" for a request to "/cbo-scp/login"). To stay correct under
+ * both root hosting and sub-path hosting we judge a route as public on the
+ * basePath-stripped pathname, and — when redirecting an unauthenticated user
+ * to the sign-in page — we build the redirect with the basePath prefix so the
+ * login page actually resolves.
  */
 export const authConfig: NextAuthConfig = {
   pages: { signIn: "/login" },
@@ -15,24 +18,26 @@ export const authConfig: NextAuthConfig = {
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
 
-      const candidates: string[] = [];
+      const base = nextUrl.basePath || "";
       const raw = nextUrl.pathname;
-      candidates.push(raw);
-      // pathname with the leading (base-path) segment removed, e.g.
-      // "/cbo-scp/login" -> "/login", "/login" -> "/login".
-      const segs = raw.split("/").filter(Boolean);
-      candidates.push("/" + segs.slice(1).join("/"));
+      // pathname is already base-stripped here, but guard anyway.
+      const path = base && raw.startsWith(base) ? raw.slice(base.length) || "/" : raw;
 
-      const isPublic = candidates.some((path) => {
-        if (!path) return false;
-        if (path === "/" || path === "/login") return true;
-        if (path.startsWith("/api/auth")) return true;
-        if (path.startsWith("/_next")) return true;
-        if (path.startsWith("/favicon")) return true;
-        return false;
-      });
+      const isPublic =
+        path === "/" ||
+        path === "/login" ||
+        path.startsWith("/api/auth") ||
+        path.startsWith("/_next") ||
+        path.startsWith("/favicon");
 
-      return isPublic || isLoggedIn;
+      if (isPublic) return true;
+      if (!isLoggedIn) {
+        // Redirect to the login page *under the base path* (e.g. /cbo-scp/login)
+        // so the sign-in page isn't a 404. Absent a base path this is /login.
+        const login = new URL(`${base}/login`, nextUrl.origin);
+        return NextResponse.redirect(login.toString());
+      }
+      return true;
     },
   },
 };
