@@ -14,21 +14,22 @@ export default async function middleware(req: import("next/server").NextRequest)
   if (!res || typeof (res as any).headers?.set !== "function") {
     return NextResponse.next();
   }
+  const response = res as Response;
 
   // NextAuth redirects to pages.signIn = "/login". Under sub-path hosting the
   // login page lives at /<basePath>/login, so rewrite the Location to include
   // the basePath (which is reliably available on req.nextUrl.basePath).
   const base = req.nextUrl.basePath || "";
   if (base) {
-    const loc = res.headers.get("location");
+    const loc = response.headers.get("location");
     if (loc) {
       const url = new URL(loc, req.nextUrl.origin);
       const stripped = url.pathname.replace(/^\/+/, "");
       if (stripped === "login" || stripped.startsWith("login?")) {
         url.pathname = `${base}/login`;
-        const newRes = NextResponse.redirect(url.toString(), (res as Response).status);
+        const newRes = NextResponse.redirect(url.toString(), response.status);
         // carry over authjs cookies set by NextAuth (csrf, callback-url)
-        (res as Response).headers.forEach((value, key) => {
+        response.headers.forEach((value, key) => {
           if (key.toLowerCase().startsWith("set-cookie")) {
             newRes.headers.append("set-cookie", value);
           }
@@ -38,7 +39,7 @@ export default async function middleware(req: import("next/server").NextRequest)
     }
   }
 
-  return res;
+  return response;
 }
 
 export const config = {
