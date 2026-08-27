@@ -15,6 +15,10 @@ RUN --mount=type=cache,target=/root/.npm \
 FROM node:20-alpine AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
+# BASE_PATH is baked in at build time by next.config.js (basePath + assetPrefix).
+# Pass it as a --build-arg so sub-path hosting works; empty means root hosting.
+ARG BASE_PATH
+ENV BASE_PATH=$BASE_PATH
 RUN apk add --no-cache libc6-compat openssl
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
