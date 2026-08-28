@@ -13,6 +13,7 @@ import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { withBase } from "@/lib/base";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, Eye, Download, Trash2, FileText, Search, X, Link2 } from "lucide-react";
 import { deletePageAction } from "./actions";
@@ -123,10 +124,11 @@ export function StaticPagesList({
             {pages.map((p) => {
               const isLink = p.fileType === "link";
               const openHref = isLink ? p.linkUrl ?? "#" : `/api/static-pages/${p.id}`;
+              const rawOpenHref = isLink ? openHref : withBase(openHref);
               const subName = isLink ? p.linkUrl ?? "Link" : p.fileName;
               return (
               <li key={p.id} className="flex items-center gap-2 px-3 py-2.5 hover:bg-accent/50">
-                <a href={openHref} target="_blank" rel="noopener noreferrer" title={isLink ? "Open link" : "Open file"} className="flex min-w-0 flex-1 items-center gap-2.5">
+                <a href={rawOpenHref} target="_blank" rel="noopener noreferrer" title={isLink ? "Open link" : "Open file"} className="flex min-w-0 flex-1 items-center gap-2.5">
                   {isLink ? <Link2 className="h-5 w-5 shrink-0 text-primary" /> : <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />}
                   <span className="min-w-0">
                     <span className="flex items-center gap-1.5">

@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Download, Upload, Loader2, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { withBase } from "@/lib/base";
 
 export function BackupActions({ enabled }: { enabled: boolean }) {
   return (
@@ -20,7 +21,7 @@ export function BackupActions({ enabled }: { enabled: boolean }) {
       <div className="flex flex-wrap gap-2">
         <Button asChild disabled={!enabled} aria-disabled={!enabled}>
           <a
-            href={enabled ? "/api/admin/backup" : "#"}
+            href={enabled ? withBase("/api/admin/backup") : "#"}
             // The browser respects the Content-Disposition header, so we don't
             // need download="" — but we set it anyway as a hint for browsers
             // that prefer it.
@@ -68,7 +69,7 @@ function RestoreForm({ enabled }: { enabled: boolean }) {
     fd.append("password", password);
 
     try {
-      const res = await fetch("/api/admin/restore", { method: "POST", body: fd });
+      const res = await fetch(withBase("/api/admin/restore"), { method: "POST", body: fd });
       const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; message?: string };
       if (res.ok && data.ok) {
         setResult({ ok: true, message: data.message || "Restore complete." });

@@ -19,6 +19,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Pass it as a --build-arg so sub-path hosting works; empty means root hosting.
 ARG BASE_PATH
 ENV BASE_PATH=$BASE_PATH
+# Client-side base path so raw <a>/fetch("/api/...") links resolve under the
+# deployment base path (see src/lib/base.ts). Baked in with the build.
+ENV NEXT_PUBLIC_BASE_PATH=$BASE_PATH
 RUN apk add --no-cache libc6-compat openssl
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .

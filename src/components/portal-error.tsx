@@ -6,6 +6,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AlertTriangle, RotateCw } from "lucide-react";
+import { withBase } from "@/lib/base";
 
 export function PortalError({
   area,
@@ -46,7 +47,7 @@ export function PortalError({
               <RotateCw className="h-4 w-4" /> Try again
             </Button>
             <Button asChild variant="outline" size="sm">
-              <a href="/">Go home</a>
+              <a href={withBase("/")}>Go home</a>
             </Button>
           </div>
         </CardContent>

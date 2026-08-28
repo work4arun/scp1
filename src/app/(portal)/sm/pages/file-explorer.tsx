@@ -23,6 +23,7 @@ import {
   Pencil, X, FileText, AlertTriangle, Search, Link2, FileUp,
 } from "lucide-react";
 import { createFolderAction, renameFolderAction, deleteFolderAction, deletePageAction } from "./actions";
+import { withBase } from "@/lib/base";
 
 export type Crumb = { id: string; name: string };
 export type FolderRow = { id: string; name: string; childCount: number; pageCount: number };
@@ -116,7 +117,7 @@ export function FileExplorer({
     form.set("mode", uploadMode);
     if (uploadMode === "link") form.delete("file");
     try {
-      const res = await fetch("/api/static-pages/upload", { method: "POST", body: form });
+      const res = await fetch(withBase("/api/static-pages/upload"), { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) { setUploadError(data.error || "Upload failed"); return; }
       setUploadOpen(false); setUploadMode("file"); router.refresh();
@@ -204,11 +205,12 @@ export function FileExplorer({
             {shownPages.map((p) => {
               const isLink = p.fileType === "link";
               const openHref = isLink ? p.linkUrl ?? "#" : `/api/static-pages/${p.id}`;
+              const rawOpenHref = isLink ? openHref : withBase(openHref);
               const subName = isLink ? p.linkUrl ?? "Link" : p.fileName;
               return (
               <li key={p.id} className="flex items-center gap-2 px-3 py-2.5 hover:bg-accent/50">
                 {/* Clicking anywhere on the row opens it in a new tab, same as the eye icon. */}
-                <a href={openHref} target="_blank" rel="noopener noreferrer" title={isLink ? "Open link" : "Open file"} className="flex min-w-0 flex-1 items-center gap-2.5">
+                <a href={rawOpenHref} target="_blank" rel="noopener noreferrer" title={isLink ? "Open link" : "Open file"} className="flex min-w-0 flex-1 items-center gap-2.5">
                   {isLink ? <Link2 className="h-5 w-5 shrink-0 text-primary" /> : <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />}
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium">{p.pageName}</span>

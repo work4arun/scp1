@@ -12,6 +12,7 @@
 
 import { FileText, FileSpreadsheet, FileImage, File as FileIcon, FileArchive, Presentation, Film, Download, ExternalLink } from "lucide-react";
 import { canOpenInline, fileCategory, categoryLabel, formatBytes, type FileCategory } from "@/lib/attachments";
+import { withBase } from "@/lib/base";
 
 export type Attachment = { fileId: string; name: string; mime: string | null; size: number | null };
 
@@ -31,7 +32,7 @@ export function AttachmentChip({ file }: { file: Attachment }) {
   const cat = fileCategory(file.name, file.mime);
   const Icon = ICON[cat];
   const inline = canOpenInline(file.name, file.mime);
-  const href = `/api/task-update-files/${file.fileId}`;
+  const href = withBase(`/api/task-update-files/${file.fileId}`);
   const sizeText = formatBytes(file.size);
 
   return (
