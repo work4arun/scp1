@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import type { SystemRole } from "@prisma/client";
 import { SignOutButton } from "@/components/sign-out-button";
 import { DarkModeToggle } from "@/components/dark-mode-toggle";
+import { BackupReminderModal } from "@/components/backup-reminder-modal";
 
 type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; external?: boolean };
 type NavSection = {
@@ -118,6 +119,7 @@ export function AppShell({
   userEmail,
   darkModeToggleEnabled = false,
   dashboardUrl,
+  showBackupReminder = false,
 }: {
   children: React.ReactNode;
   role: SystemRole;
@@ -125,6 +127,7 @@ export function AppShell({
   userEmail: string;
   darkModeToggleEnabled?: boolean;
   dashboardUrl?: string;
+  showBackupReminder?: boolean;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -252,6 +255,9 @@ export function AppShell({
           );
         })}
       </nav>
+
+      {/* Daily backup reminder — SM only, only when a download hasn't completed today. */}
+      {role === "SM" && showBackupReminder && <BackupReminderModal />}
     </div>
   );
 }
